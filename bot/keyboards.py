@@ -6,6 +6,7 @@ from utils import nav_labels as N
 def main_menu(is_whitelist: bool) -> ReplyKeyboardMarkup:
     base = [
         [KeyboardButton(N.BTN_INTERVIEWS), KeyboardButton(N.BTN_GUIDE)],
+        [KeyboardButton(N.BTN_SITE)],
     ]
     if is_whitelist:
         base.append([KeyboardButton(N.BTN_INVITE)])

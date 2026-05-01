@@ -3,6 +3,7 @@
 # Главное меню
 BTN_INTERVIEWS = "Собесы"
 BTN_GUIDE = "Как пользоваться"
+BTN_SITE = "Сайт"
 BTN_INVITE = "Пригласить человека"
 
 GUIDE_ALIASES = frozenset({BTN_GUIDE, "Справка", "Что отправить"})

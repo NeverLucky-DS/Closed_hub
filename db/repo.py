@@ -167,12 +167,17 @@ async def insert_event(
     source_user_id: int,
     status: str = "published",
     published_message_id: int | None = None,
+    starts_at: Any | None = None,
+    ends_at: Any | None = None,
 ) -> int:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO events (raw_text, normalized_title, source_user_id, status, published_message_id)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO events (
+                raw_text, normalized_title, source_user_id, status, published_message_id,
+                starts_at, ends_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING id
             """,
             raw_text,
@@ -180,6 +185,8 @@ async def insert_event(
             source_user_id,
             status,
             published_message_id,
+            starts_at,
+            ends_at,
         )
         return int(row["id"])
 
@@ -322,6 +329,24 @@ async def list_file_categories(pool: asyncpg.Pool) -> list[asyncpg.Record]:
         return list(rows)
 
 
+async def list_categories_with_counts(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                c.slug,
+                c.label_ru,
+                COALESCE(SUM(CASE WHEN f.status = 'confirmed' THEN 1 ELSE 0 END), 0)::int AS files_count,
+                MAX(f.created_at) FILTER (WHERE f.status = 'confirmed') AS last_added
+            FROM file_categories c
+            LEFT JOIN files f ON f.confirmed_category = c.slug
+            GROUP BY c.slug, c.label_ru
+            ORDER BY files_count DESC, c.label_ru ASC
+            """,
+        )
+        return list(rows)
+
+
 async def ensure_file_category(
     pool: asyncpg.Pool,
     slug: str,
@@ -435,15 +460,250 @@ async def get_file_record(pool: asyncpg.Pool, file_id: int) -> asyncpg.Record | 
         return await conn.fetchrow("SELECT * FROM files WHERE id = $1", file_id)
 
 
-async def list_library_files(pool: asyncpg.Pool, limit: int = 40) -> list[asyncpg.Record]:
+async def list_library_files(
+    pool: asyncpg.Pool,
+    limit: int = 40,
+    category_slug: str | None = None,
+) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        if category_slug:
+            rows = await conn.fetch(
+                """
+                SELECT id, storage_path, sha256, mime_type, summary, confirmed_category,
+                       original_filename, uploaded_by, uploader_handle, created_at, confirmed_at, status
+                FROM files
+                WHERE status = 'confirmed' AND confirmed_category = $2
+                ORDER BY created_at DESC
+                LIMIT $1
+                """,
+                limit,
+                category_slug,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT id, storage_path, sha256, mime_type, summary, confirmed_category,
+                       original_filename, uploaded_by, uploader_handle, created_at, confirmed_at, status
+                FROM files
+                WHERE status = 'confirmed'
+                ORDER BY created_at DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+        return list(rows)
+
+
+_EVENTS_ACTIVE_FILTER = """
+    status = 'published'
+    AND (ends_at IS NULL OR ends_at >= date_trunc('day', now() AT TIME ZONE 'UTC'))
+"""
+
+_EVENTS_ORDER = """
+    ORDER BY
+        CASE
+            WHEN ends_at IS NOT NULL AND ends_at > now() AND ends_at <= now() + interval '7 days' THEN 0
+            WHEN created_at >= now() - interval '48 hours' THEN 1
+            ELSE 2
+        END,
+        CASE
+            WHEN ends_at IS NOT NULL AND ends_at > now() AND ends_at <= now() + interval '7 days'
+            THEN extract(epoch from ends_at)
+        END ASC NULLS LAST,
+        created_at DESC
+"""
+
+
+async def list_events_feed(pool: asyncpg.Pool, limit: int = 50) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT id, raw_text, normalized_title, source_user_id,
+                   starts_at, ends_at, ai_summary, created_at
+            FROM events
+            WHERE {_EVENTS_ACTIVE_FILTER}
+            {_EVENTS_ORDER}
+            LIMIT $1
+            """,
+            limit,
+        )
+        return list(rows)
+
+
+async def list_events_today_strip(pool: asyncpg.Pool, limit: int = 20) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT id, raw_text, normalized_title, ends_at, ai_summary, created_at
+            FROM events
+            WHERE {_EVENTS_ACTIVE_FILTER}
+            {_EVENTS_ORDER}
+            LIMIT $1
+            """,
+            limit,
+        )
+        return list(rows)
+
+
+async def update_event_summary(pool: asyncpg.Pool, event_id: int, ai_summary: str | None) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE events SET ai_summary = $2 WHERE id = $1",
+            event_id,
+            ai_summary,
+        )
+
+
+async def list_events_without_summary(
+    pool: asyncpg.Pool,
+    limit: int = 100,
+) -> list[asyncpg.Record]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT id, storage_path, sha256, mime_type, summary, confirmed_category,
-                   original_filename, uploaded_by, uploader_handle, created_at, confirmed_at, status
-            FROM files
-            WHERE status = 'confirmed'
+            SELECT id, raw_text FROM events
+            WHERE status = 'published'
+              AND (ai_summary IS NULL OR ai_summary = '')
             ORDER BY created_at DESC
+            LIMIT $1
+            """,
+            limit,
+        )
+        return list(rows)
+
+
+async def insert_web_login_code(
+    pool: asyncpg.Pool,
+    telegram_user_id: int,
+    code_hash: str,
+    expires_at: Any,
+) -> int:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO web_login_codes (telegram_user_id, code_hash, expires_at)
+            VALUES ($1, $2, $3)
+            RETURNING id
+            """,
+            telegram_user_id,
+            code_hash,
+            expires_at,
+        )
+        return int(row["id"])
+
+
+async def fetch_valid_web_login_code(
+    pool: asyncpg.Pool,
+    telegram_user_id: int,
+) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT id, code_hash FROM web_login_codes
+            WHERE telegram_user_id = $1
+              AND expires_at > now()
+              AND consumed_at IS NULL
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            telegram_user_id,
+        )
+
+
+async def consume_web_login_code(pool: asyncpg.Pool, code_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE web_login_codes SET consumed_at = now() WHERE id = $1 AND consumed_at IS NULL
+            """,
+            code_id,
+        )
+
+
+async def ensure_member_profile_row(pool: asyncpg.Pool, telegram_user_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO member_profiles (telegram_user_id) VALUES ($1)
+            ON CONFLICT (telegram_user_id) DO NOTHING
+            """,
+            telegram_user_id,
+        )
+
+
+async def get_member_profile(pool: asyncpg.Pool, telegram_user_id: int) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            "SELECT * FROM member_profiles WHERE telegram_user_id = $1",
+            telegram_user_id,
+        )
+
+
+async def upsert_member_profile(
+    pool: asyncpg.Pool,
+    telegram_user_id: int,
+    *,
+    display_name: str | None = None,
+    bio: str | None = None,
+    github_url: str | None = None,
+    photo_paths: list[str] | None = None,
+) -> None:
+    async with pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "SELECT 1 FROM member_profiles WHERE telegram_user_id = $1",
+            telegram_user_id,
+        )
+        if existing:
+            sets: list[str] = []
+            args: list[Any] = []
+            idx = 1
+            if display_name is not None:
+                sets.append(f"display_name = ${idx}")
+                args.append(display_name)
+                idx += 1
+            if bio is not None:
+                sets.append(f"bio = ${idx}")
+                args.append(bio)
+                idx += 1
+            if github_url is not None:
+                sets.append(f"github_url = ${idx}")
+                args.append(github_url)
+                idx += 1
+            if photo_paths is not None:
+                sets.append(f"photo_paths = ${idx}::jsonb")
+                args.append(json.dumps(photo_paths))
+                idx += 1
+            if not sets:
+                return
+            sets.append("updated_at = now()")
+            args.append(telegram_user_id)
+            q = f"UPDATE member_profiles SET {', '.join(sets)} WHERE telegram_user_id = ${idx}"
+            await conn.execute(q, *args)
+        else:
+            await conn.execute(
+                """
+                INSERT INTO member_profiles (
+                    telegram_user_id, display_name, bio, github_url, photo_paths, updated_at
+                )
+                VALUES ($1, $2, $3, COALESCE($4, 'https://github.com/'), COALESCE($5::jsonb, '[]'::jsonb), now())
+                """,
+                telegram_user_id,
+                display_name,
+                bio,
+                github_url if github_url is not None else "https://github.com/",
+                json.dumps(photo_paths if photo_paths is not None else []),
+            )
+
+
+async def list_public_profiles(pool: asyncpg.Pool, limit: int = 200) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT p.telegram_user_id, p.display_name, p.bio, p.github_url, p.photo_paths
+            FROM member_profiles p
+            INNER JOIN members m ON m.telegram_user_id = p.telegram_user_id
+            WHERE m.status = 'active'
+            ORDER BY p.updated_at DESC
             LIMIT $1
             """,
             limit,

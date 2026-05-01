@@ -35,5 +35,21 @@ services:
       - ${GOOGLE_SERVICE_ACCOUNT_JSON_HOST:-./closeml-fc7387cd4ce5.json}:/app/secrets/google-service-account.json:ro
     restart: unless-stopped
 
+  web:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://closedhub:closedhub@postgres:5432/closedhub
+    volumes:
+      - ./storage:/app/storage
+    ports:
+      - "8000:8000"
+    command: ["uv", "run", "--no-sync", "python", "-m", "web.main"]
+    restart: unless-stopped
+
 volumes:
   pgdata:

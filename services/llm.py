@@ -77,6 +77,22 @@ async def classify_intent(pool, user_text: str) -> tuple[str, float]:
     return intent, conf
 
 
+async def summarize_event(pool, raw_text: str) -> dict:
+    """Короткое саммари одного мероприятия для ленты сайта."""
+    settings = get_settings()
+    template = _load_prompt("event_summary.txt")
+    user_block = template.replace("{raw_text}", raw_text[:8000])
+    raw, _, _ = await mistral_chat(
+        pool,
+        purpose="event_summary",
+        model=settings.mistral_model_default,
+        system="Reply with JSON only.",
+        user=user_block,
+        json_mode=True,
+    )
+    return json.loads(raw)
+
+
 async def dedup_event(pool, new_text: str, existing_texts: list[str]) -> dict:
     settings = get_settings()
     template = _load_prompt("event_dedup.txt")

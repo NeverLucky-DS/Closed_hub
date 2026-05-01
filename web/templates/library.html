@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% block main %}
+<header class="mb-7">
+  <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Библиотека</div>
+  <h1 class="mt-1 text-2xl md:text-3xl font-semibold tracking-tight">
+    {% if view == 'folders' %}Файлы по темам{% else %}{{ category_label }}{% endif %}
+  </h1>
+  {% if view == 'files' %}
+  <nav class="mt-3 flex items-center gap-2 text-sm text-ink-300">
+    <a href="/library" class="hover:text-ink-100">Файлы</a>
+    {{ icon.chevron_right() }}
+    <span class="text-ink-100">{{ category_label }}</span>
+  </nav>
+  {% else %}
+  <p class="mt-1 text-sm text-ink-300">Папка с подтверждёнными файлами по каждой теме. Файлы добавляются через бота.</p>
+  {% endif %}
+</header>
+
+{% if view == 'folders' %}
+  {% set visible = categories | selectattr('files_count', 'gt', 0) | list %}
+  {% if visible %}
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+    {% for c in visible %}
+    <a href="/library?cat={{ c.slug }}" class="card card-hover p-5 group block">
+      <div class="cover-bg {{ c.slug | event_cover }} rounded-xl h-24 mb-4 flex items-center justify-center text-white/95">
+        <span class="opacity-90">{{ icon.folder_lg() }}</span>
+      </div>
+      <div class="flex items-baseline justify-between gap-2">
+        <h3 class="font-medium text-ink-100 truncate">{{ c.label_ru }}</h3>
+        <span class="text-xs num text-ink-300">({{ c.files_count }})</span>
+      </div>
+      <div class="mt-1 text-xs text-ink-300 num">
+        {% if c.last_added %}обновлено {{ c.last_added | dt_short }}{% else %}нет файлов{% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card p-10 text-center">
+    <div class="mx-auto w-12 h-12 rounded-xl cover-bg cover-2 flex items-center justify-center text-white">{{ icon.folder_lg() }}</div>
+    <p class="mt-4 text-ink-200">Пока нет ни одной темы с файлами.</p>
+    <p class="mt-1 text-sm text-ink-300">Пришли документ боту — он предложит папку, и она появится здесь.</p>
+  </div>
+  {% endif %}
+
+  {# Список «Все темы» (включая пустые) — компактно ниже #}
+  {% set empty = categories | selectattr('files_count', 'eq', 0) | list %}
+  {% if empty %}
+  <details class="mt-8 group">
+    <summary class="cursor-pointer text-sm text-ink-300 hover:text-ink-100 inline-flex items-center gap-1 select-none">
+      Показать пустые темы ({{ empty | length }})
+      <span class="group-open:rotate-180 transition">{{ icon.chevron_down() }}</span>
+    </summary>
+    <ul class="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
+      {% for c in empty %}
+      <li class="text-ink-300">{{ c.label_ru }} <span class="num">(0)</span></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+{% else %}
+  <div class="grid grid-cols-1 lg:grid-cols-[18rem_1fr] gap-4">
+    <aside class="card overflow-hidden">
+      <div class="px-3 py-2.5 border-b border-ink-600 text-xs uppercase tracking-[0.18em] text-ink-300">
+        {{ files | length }} {{ files | length | ru_plural(['файл','файла','файлов']) }}
+      </div>
+      <ul class="max-h-[70vh] overflow-y-auto">
+        {% for f in files %}
+        {% set kind = f | file_kind %}
+        {% set is_active = selected and selected.id == f.id %}
+        <li>
+          <a href="/library?cat={{ category }}&file={{ f.id }}"
+             class="flex items-start gap-3 px-3 py-2.5 border-b border-ink-600/60 hover:bg-ink-700/60 transition {{ 'bg-ink-700' if is_active else '' }}">
+            <span class="mt-0.5 text-ink-300">
+              {% if kind == 'pdf' %}{{ icon.file_pdf() }}
+              {% elif kind == 'image' %}{{ icon.file_image() }}
+              {% else %}{{ icon.file_text() }}{% endif %}
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm text-ink-100 truncate">{{ f.original_filename or ('#' ~ f.id) }}</span>
+              <span class="block text-xs text-ink-300 num">
+                {{ f.uploader_handle or f.uploaded_by }} · {{ (f.confirmed_at or f.created_at) | dt_short }}
+              </span>
+            </span>
+          </a>
+        </li>
+        {% endfor %}
+        {% if not files %}
+        <li class="px-3 py-6 text-center text-sm text-ink-300">В этой теме пока пусто.</li>
+        {% endif %}
+      </ul>
+    </aside>
+
+    <section class="viewer min-h-[60vh]">
+      {% if selected %}
+      {% set kind = selected | file_kind %}
+      <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-ink-600">
+        <div class="min-w-0">
+          <div class="text-sm text-ink-100 truncate">{{ selected.original_filename or ('#' ~ selected.id) }}</div>
+          <div class="text-xs text-ink-300 num">
+            {{ selected.uploader_handle or selected.uploaded_by }} ·
+            {{ (selected.confirmed_at or selected.created_at) | dt_short }}
+            {% if selected.mime_type %} · {{ selected.mime_type }}{% endif %}
+          </div>
+        </div>
+        <a class="btn" href="/api/library/{{ selected.id }}/raw" download>
+          {{ icon.download() }}<span>Скачать</span>
+        </a>
+      </div>
+      {% if kind == 'pdf' %}
+        <iframe class="viewer-frame" src="/api/library/{{ selected.id }}/raw#toolbar=1&navpanes=0" title="PDF"></iframe>
+      {% elif kind == 'image' %}
+        <img src="/api/library/{{ selected.id }}/raw" alt="">
+      {% else %}
+        <div class="flex flex-col items-center justify-center text-center px-6 py-16 gap-3 flex-1">
+          <span class="text-accent">{{ icon.file_text() }}</span>
+          <p class="text-ink-200">Превью недоступно для этого типа файла.</p>
+          <a class="btn btn-primary" href="/api/library/{{ selected.id }}/raw" download>
+            {{ icon.download() }}<span>Скачать</span>
+          </a>
+        </div>
+      {% endif %}
+      {% else %}
+      <div class="flex flex-col items-center justify-center text-center px-6 py-20 gap-3 flex-1 text-ink-300">
+        <span class="opacity-60">{{ icon.folder_lg() }}</span>
+        <p>В этой теме пока нет файлов.</p>
+      </div>
+      {% endif %}
+    </section>
+  </div>
+{% endif %}
+{% endblock %}

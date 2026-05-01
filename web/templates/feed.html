@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% block main %}
+<header class="mb-7">
+  <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Лента</div>
+  <h1 class="mt-1 text-2xl md:text-3xl font-semibold tracking-tight">Актуальные мероприятия</h1>
+  <p class="mt-1 text-sm text-ink-300">
+    {{ metrics.total }} {{ metrics.total | ru_plural(['активное','активных','активных']) }}
+    {% if metrics.soon %}
+    · <span class="text-amber-300/90">{{ metrics.soon }} {{ metrics.soon | ru_plural(['заканчивается','заканчиваются','заканчиваются']) }} на этой неделе</span>
+    {% endif %}
+  </p>
+</header>
+
+{% if events %}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+  {% for e in events %}
+  {% set hdr = e | event_header %}
+  {% set summary = e | event_summary %}
+  <article class="card card-hover overflow-hidden flex flex-col">
+    <div class="cover-bg {{ hdr | event_cover }} h-32 px-5 flex items-end">
+      <div class="pb-3 flex flex-wrap items-center gap-1.5">
+        {% for b in e | event_badges %}
+          {% if b.kind == 'warn' %}<span class="badge badge-warn"><span class="opacity-80">{{ icon.flame() }}</span>{{ b.text }}</span>
+          {% elif b.kind == 'accent' %}<span class="badge badge-accent"><span class="opacity-80">{{ icon.sparkle() }}</span>{{ b.text }}</span>
+          {% else %}<span class="badge"><span class="opacity-80">{{ icon.calendar() }}</span><span class="num">{{ b.text }}</span></span>{% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    <div class="px-5 py-5 flex-1 flex flex-col">
+      <h3 class="font-semibold tracking-tight text-ink-100 line-clamp-2">{{ hdr }}</h3>
+      {% if summary %}
+      <p class="mt-2 text-sm text-ink-200 leading-relaxed line-clamp-3">{{ summary }}</p>
+      {% endif %}
+      <details class="mt-4 group">
+        <summary class="cursor-pointer text-xs text-ink-300 hover:text-ink-100 inline-flex items-center gap-1 select-none">
+          Полный текст
+          <span class="group-open:rotate-180 transition">{{ icon.chevron_down() }}</span>
+        </summary>
+        <div class="mt-2 text-sm text-ink-200 whitespace-pre-wrap leading-relaxed">{{ e.raw_text }}</div>
+      </details>
+      <div class="mt-auto pt-4 flex items-center justify-between text-xs text-ink-300 num">
+        <span>добавлено {{ e.created_at | dt_short }}</span>
+        {% if e.ends_at %}<span>до {{ e.ends_at | dt_short }}</span>{% endif %}
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card p-10 text-center">
+  <div class="mx-auto w-12 h-12 rounded-xl cover-bg cover-3 flex items-center justify-center text-white">{{ icon.calendar() }}</div>
+  <p class="mt-4 text-ink-200">Активных мероприятий нет.</p>
+  <p class="mt-1 text-sm text-ink-300">Закинь анонс через бота — он попадёт в ленту.</p>
+</div>
+{% endif %}
+{% endblock %}

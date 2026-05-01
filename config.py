@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     google_sheet_id: Optional[str] = None
     google_service_account_json_path: Optional[str] = None
 
+    # Веб-хаб (отдельный процесс uvicorn). Для сессий и HMAC кода входа.
+    web_session_secret: Optional[str] = None
+    web_public_base_url: Optional[str] = None
+    web_auth_code_ttl_sec: int = 600
+    web_max_profile_photo_mb: int = 3
+
     @field_validator("telegram_group_chat_id", mode="before")
     @classmethod
     def _normalize_chat_id(cls, v: Any) -> Union[int, str, None]:

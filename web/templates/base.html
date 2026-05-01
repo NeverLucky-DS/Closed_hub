@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0a0d14">
+  <title>{% block title %}{{ title }}{% endblock %} · Хаб</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+          },
+          colors: {
+            ink: {
+              900: '#0a0d14',
+              800: '#11151f',
+              700: '#161b27',
+              600: '#1f2535',
+              500: '#2a3146',
+              400: '#3a4360',
+              300: '#7d8597',
+              200: '#aab1c0',
+              100: '#e6e8ef',
+            },
+            accent: {
+              DEFAULT: '#8a9bff',
+              soft: 'rgba(138, 155, 255, 0.16)',
+              2: '#c084fc',
+            },
+          },
+          boxShadow: {
+            soft: '0 14px 40px -20px rgba(0, 0, 0, 0.6)',
+            glow: '0 0 0 1px rgba(138, 155, 255, 0.4), 0 12px 40px -16px rgba(138, 155, 255, 0.5)',
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="/static/css/base.css">
+</head>
+<body class="bg-ink-900 text-ink-100 antialiased">
+{% import "_icons.html" as icon %}
+{% if uid is defined and uid %}
+<div class="min-h-screen md:flex">
+  {# Sidebar (md+) #}
+  <aside class="hidden md:flex md:flex-col md:w-60 md:fixed md:inset-y-0 md:left-0 md:px-3 md:py-4 md:border-r md:border-ink-600 md:bg-ink-900/80 md:backdrop-blur-xl">
+    <a href="/library" class="flex items-center gap-2 px-2 py-2">
+      <span class="text-accent">{{ icon.logo() }}</span>
+      <span class="font-semibold tracking-tight">Хаб</span>
+    </a>
+    <nav class="mt-5 flex flex-col gap-1">
+      <a href="/library" class="nav-link {{ 'active' if nav == 'library' else '' }}">
+        {{ icon.folder() }}<span>Файлы</span>
+      </a>
+      <a href="/feed" class="nav-link {{ 'active' if nav == 'feed' else '' }}">
+        {{ icon.layers() }}<span>Мероприятия</span>
+      </a>
+      <a href="/today" class="nav-link {{ 'active' if nav == 'today' else '' }}">
+        {{ icon.flame() }}<span>Сегодня</span>
+      </a>
+      <a href="/people" class="nav-link {{ 'active' if nav == 'people' else '' }}">
+        {{ icon.users() }}<span>Люди</span>
+      </a>
+      <a href="/me" class="nav-link {{ 'active' if nav == 'me' else '' }}">
+        {{ icon.user() }}<span>Профиль</span>
+      </a>
+    </nav>
+    <div class="mt-auto pt-4 border-t border-ink-600">
+      <div class="px-2 text-xs text-ink-300">Telegram ID</div>
+      <div class="px-2 text-sm num">{{ uid }}</div>
+      <a href="/logout" class="mt-3 nav-link text-ink-300 hover:text-ink-100">
+        {{ icon.logout() }}<span>Выйти</span>
+      </a>
+    </div>
+  </aside>
+
+  {# Top-nav (mobile) #}
+  <header class="md:hidden sticky top-0 z-30 flex items-center justify-between gap-3 px-4 py-3 bg-ink-900/85 backdrop-blur border-b border-ink-600">
+    <a href="/library" class="flex items-center gap-2">
+      <span class="text-accent">{{ icon.logo() }}</span>
+      <span class="font-semibold">Хаб</span>
+    </a>
+    <a href="/logout" class="text-ink-300 text-sm">{{ icon.logout() }}</a>
+  </header>
+  <nav class="md:hidden flex overflow-x-auto gap-1 px-2 py-2 bg-ink-900 border-b border-ink-600 text-sm">
+    <a href="/library" class="nav-link whitespace-nowrap {{ 'active' if nav == 'library' else '' }}">{{ icon.folder() }}<span>Файлы</span></a>
+    <a href="/feed" class="nav-link whitespace-nowrap {{ 'active' if nav == 'feed' else '' }}">{{ icon.layers() }}<span>Мероприятия</span></a>
+    <a href="/today" class="nav-link whitespace-nowrap {{ 'active' if nav == 'today' else '' }}">{{ icon.flame() }}<span>Сегодня</span></a>
+    <a href="/people" class="nav-link whitespace-nowrap {{ 'active' if nav == 'people' else '' }}">{{ icon.users() }}<span>Люди</span></a>
+    <a href="/me" class="nav-link whitespace-nowrap {{ 'active' if nav == 'me' else '' }}">{{ icon.user() }}<span>Профиль</span></a>
+  </nav>
+
+  <main class="flex-1 md:ml-60 px-4 md:px-10 py-6 md:py-10 max-w-6xl">
+    {% block main %}{% endblock %}
+  </main>
+</div>
+{% else %}
+<main class="min-h-screen">
+  {% block public %}{% endblock %}
+</main>
+{% endif %}
+</body>
+</html>

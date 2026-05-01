@@ -8,6 +8,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.error import Forbidden, TelegramError
 from telegram.ext import ContextTypes
 
+from config import get_settings
 from utils import nav_labels as N
 from bot.keyboards import (
     interview_hub_keyboard,
@@ -48,16 +49,12 @@ async def _help_reply(message: Message, is_whitelist: bool) -> None:
         "начислятся очки. Что публиковать, решаешь ты; итоги очков дублируются в теме «Рейтинг».\n\n"
         "— Мероприятия\n"
         "Напиши текст анонса своими словами — проверю на дубли и при необходимости отправлю в тему новостей.\n\n"
-        "— Контакт HR\n"
-        "Сначала одним сообщением @username или числовой ID, потом контекст (можно голосом, если настроен Groq). "
-        "Важно: компанию-работодателя укажи отдельно; площадку знакомства (мероприятие, Future Today и т.п.) "
-        "не подставляй вместо работодателя.\n\n"
         "— Файлы\n"
         "Пришли документ, например PDF — предложу папку в библиотеке. Список и скачивание: команда /files\n\n"
         "— Голосовые\n"
-        "При наличии GROQ_API_KEY в настройках распознаю речь и обработаю как обычный текст.\n\n"
+        "Распознаю речь и обработаю как обычный текст.\n\n"
         "— Собесы\n"
-        "Читай чужие истории по компаниям или добавь свою — кнопка «Собесы»."
+        "Читай истории наших слонов по компаниям или добавь свою — кнопка «Собесы»."
     )
     if is_whitelist:
         text += (
@@ -293,6 +290,23 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await msg.reply_text(
             "Сначала ответь на черновик HR кнопками «Верно» или «Нет» под тем сообщением."
         )
+        return
+
+    if text_raw == N.BTN_SITE:
+        settings = get_settings()
+        lines = [
+            "Сайт хаба",
+            "",
+            f"Ниже — ваш Telegram UID: <code>{uid}</code>",
+            "Это и есть логин на сайте (шаг «Telegram ID»).",
+            "",
+            "Пароля нет: после ввода ID на сайте вам придёт одноразовый код в этот чат.",
+            "Введите его на сайте как код входа.",
+        ]
+        url = (settings.web_public_base_url or "").strip()
+        if url:
+            lines.extend(["", f"Открыть: {url.rstrip('/')}/login"])
+        await msg.reply_text("\n".join(lines), parse_mode="HTML")
         return
 
     if text_raw == N.BTN_INTERVIEWS:

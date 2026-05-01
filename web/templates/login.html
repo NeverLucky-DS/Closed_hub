@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block public %}
+{% import "_icons.html" as icon %}
+<div class="bg-glow min-h-screen flex items-center justify-center px-4">
+  <div class="relative w-full max-w-md">
+    <div class="card shadow-soft px-7 py-8 backdrop-blur-md">
+      <div class="flex items-center gap-3 mb-6">
+        <span class="text-accent">{{ icon.logo() }}</span>
+        <div>
+          <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Closed Hub</div>
+          <div class="text-lg font-semibold">Вход в закрытый хаб</div>
+        </div>
+      </div>
+
+      {# Шаг 1 #}
+      <div id="step1" class="space-y-4">
+        <div>
+          <label for="uid" class="block text-sm text-ink-200 mb-1.5">Ваш Telegram ID</label>
+          <input id="uid" name="uid" type="text" inputmode="numeric" autocomplete="username"
+                 placeholder="например, 123456789"
+                 class="field num">
+          <p class="mt-1.5 text-xs text-ink-300">Открой бота, нажми кнопку «Сайт» — там твой UID.</p>
+        </div>
+        <p id="err1" class="text-sm text-rose-300" hidden></p>
+        <button id="nextBtn" type="button" class="btn btn-primary w-full">
+          Получить код
+          <span class="opacity-90">{{ icon.arrow_right() }}</span>
+        </button>
+      </div>
+
+      {# Шаг 2 #}
+      <div id="step2" class="space-y-4 hidden">
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-sm text-ink-200">Код из Telegram</label>
+            <button type="button" id="backBtn" class="text-xs text-ink-300 hover:text-ink-100">Назад</button>
+          </div>
+          <div class="otp-wrap" id="otpInputs">
+            <input class="field" inputmode="numeric" maxlength="1" autocomplete="one-time-code" data-otp="0">
+            <input class="field" inputmode="numeric" maxlength="1" data-otp="1">
+            <input class="field" inputmode="numeric" maxlength="1" data-otp="2">
+            <input class="field" inputmode="numeric" maxlength="1" data-otp="3">
+            <input class="field" inputmode="numeric" maxlength="1" data-otp="4">
+            <input class="field" inputmode="numeric" maxlength="1" data-otp="5">
+          </div>
+          <p class="mt-2 text-xs text-ink-300">Код пришёл от @бота в личном чате. Действует ~10 минут.</p>
+        </div>
+        <p id="err2" class="text-sm text-rose-300" hidden></p>
+        <button id="loginBtn" type="button" class="btn btn-primary w-full">
+          Войти
+          <span class="opacity-90">{{ icon.arrow_right() }}</span>
+        </button>
+      </div>
+    </div>
+
+    <p class="text-center text-xs text-ink-300 mt-4">
+      Никаких паролей — только Telegram. Никто не сможет войти за вас, пока у них нет вашего аккаунта.
+    </p>
+  </div>
+</div>
+<script>
+(function () {
+  const step1 = document.getElementById('step1');
+  const step2 = document.getElementById('step2');
+  const uidEl = document.getElementById('uid');
+  const otpInputs = Array.from(document.querySelectorAll('#otpInputs input[data-otp]'));
+  const err1 = document.getElementById('err1');
+  const err2 = document.getElementById('err2');
+  let savedUid = '';
+
+  function showErr(el, msg) {
+    el.textContent = msg || '';
+    el.hidden = !msg;
+  }
+
+  function showStep(n) {
+    if (n === 1) { step1.classList.remove('hidden'); step2.classList.add('hidden'); uidEl.focus(); }
+    else { step1.classList.add('hidden'); step2.classList.remove('hidden'); otpInputs[0].focus(); }
+  }
+
+  function readOtp() {
+    return otpInputs.map(i => (i.value || '').replace(/\D/g, '')).join('').slice(0, 6);
+  }
+
+  otpInputs.forEach((inp, idx) => {
+    inp.addEventListener('input', (e) => {
+      let v = (e.target.value || '').replace(/\D/g, '');
+      if (v.length > 1) {
+        v.split('').forEach((ch, off) => {
+          if (idx + off < otpInputs.length) otpInputs[idx + off].value = ch;
+        });
+        const last = Math.min(idx + v.length, otpInputs.length - 1);
+        otpInputs[last].focus();
+      } else {
+        inp.value = v;
+        if (v && idx < otpInputs.length - 1) otpInputs[idx + 1].focus();
+      }
+      if (readOtp().length === 6) document.getElementById('loginBtn').click();
+    });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !inp.value && idx > 0) otpInputs[idx - 1].focus();
+    });
+    inp.addEventListener('paste', (e) => {
+      const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+      const digits = text.replace(/\D/g, '').slice(0, 6);
+      if (digits.length) {
+        e.preventDefault();
+        digits.split('').forEach((ch, off) => {
+          if (off < otpInputs.length) otpInputs[off].value = ch;
+        });
+        otpInputs[Math.min(digits.length - 1, otpInputs.length - 1)].focus();
+        if (digits.length === 6) document.getElementById('loginBtn').click();
+      }
+    });
+  });
+
+  document.getElementById('backBtn').onclick = () => showStep(1);
+
+  document.getElementById('nextBtn').onclick = async function () {
+    showErr(err1, '');
+    const uid = (uidEl.value || '').trim();
+    if (!/^\d{6,15}$/.test(uid)) {
+      showErr(err1, 'Введите числовой Telegram ID.');
+      return;
+    }
+    savedUid = uid;
+    this.disabled = true;
+    try {
+      const r = await fetch('/api/auth/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ telegram_user_id: uid }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        showErr(err1, data.detail || 'Не удалось отправить код.');
+        return;
+      }
+      showStep(2);
+    } catch (e) {
+      showErr(err1, 'Сеть недоступна.');
+    } finally {
+      this.disabled = false;
+    }
+  };
+
+  document.getElementById('loginBtn').onclick = async function () {
+    showErr(err2, '');
+    const code = readOtp();
+    if (!/^\d{6}$/.test(code)) {
+      showErr(err2, 'Введите 6 цифр.');
+      return;
+    }
+    this.disabled = true;
+    try {
+      const r = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ telegram_user_id: savedUid, code: code }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        showErr(err2, data.detail || 'Неверный код.');
+        return;
+      }
+      window.location.href = '/library';
+    } catch (e) {
+      showErr(err2, 'Сеть недоступна.');
+    } finally {
+      this.disabled = false;
+    }
+  };
+})();
+</script>
+{% endblock %}

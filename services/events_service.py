@@ -1,11 +1,27 @@
 from __future__ import annotations
 
+import logging
+
 from telegram import Bot
 from telegram.constants import ParseMode
 
 from config import get_settings
 from db import repo
 from services import activity, llm
+
+log = logging.getLogger(__name__)
+
+
+async def _safe_event_summary(pool, raw_text: str) -> tuple[str | None, str | None]:
+    """Возвращает (title, summary) от Mistral. При любой ошибке — (None, None)."""
+    try:
+        data = await llm.summarize_event(pool, raw_text)
+        title = (data.get("title") or "").strip() or None
+        summary = (data.get("summary") or "").strip() or None
+        return title, summary
+    except Exception:
+        log.warning("event summary failed", exc_info=True)
+        return None, None
 
 
 async def handle_event_message(
@@ -44,14 +60,22 @@ async def handle_event_message(
         )
         pub_id = msg.message_id
 
-    await repo.insert_event(
+    ai_title, ai_summary = await _safe_event_summary(pool, raw_text)
+    final_title = norm_title or ai_title
+
+    event_id = await repo.insert_event(
         pool,
         raw_text,
-        norm_title,
+        final_title,
         source_user_id,
         status="published",
         published_message_id=pub_id,
     )
+    if ai_summary:
+        try:
+            await repo.update_event_summary(pool, event_id, ai_summary)
+        except Exception:
+            log.warning("save ai_summary failed", exc_info=True)
     await activity.award(
         pool,
         source_user_id,

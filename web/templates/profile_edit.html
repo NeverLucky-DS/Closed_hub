@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% block main %}
+<header class="mb-7 flex flex-wrap items-end justify-between gap-3">
+  <div>
+    <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Профиль</div>
+    <h1 class="mt-1 text-2xl md:text-3xl font-semibold tracking-tight">Как тебя видят другие</h1>
+    <p class="mt-1 text-sm text-ink-300">Заполни GitHub — это обязательно. Bio и фото — необязательно.</p>
+  </div>
+  <a href="/people/{{ uid }}" class="btn">{{ icon.user() }}<span>Открыть мой профиль</span></a>
+</header>
+
+{% if error %}
+<div class="card p-3 mb-5 border-rose-500/30 text-rose-300 text-sm">{{ error }}</div>
+{% endif %}
+
+{% set photos = p.photo_paths or [] %}
+
+<form method="post" action="/me" enctype="multipart/form-data" class="grid grid-cols-1 lg:grid-cols-[1fr_22rem] gap-5">
+  <div class="card p-5 md:p-6 space-y-5">
+    <div>
+      <label for="display_name" class="block text-sm text-ink-200 mb-1.5">Имя на сайте</label>
+      <input id="display_name" name="display_name" type="text" class="field"
+             placeholder="например, Кирилл" value="{{ p.display_name or '' }}">
+    </div>
+    <div>
+      <label for="github_url" class="block text-sm text-ink-200 mb-1.5">GitHub <span class="text-rose-300">*</span></label>
+      <input id="github_url" name="github_url" type="text" class="field" required
+             placeholder="https://github.com/username" value="{{ p.github_url or '' }}">
+      <p class="mt-1.5 text-xs text-ink-300">Формат: <span class="num">https://github.com/username</span></p>
+    </div>
+    <div>
+      <label for="bio" class="block text-sm text-ink-200 mb-1.5">О себе</label>
+      <textarea id="bio" name="bio" rows="6" class="field"
+                placeholder="чем занимаешься, чем можешь помочь, чего ищешь">{{ p.bio or '' }}</textarea>
+    </div>
+
+    <div>
+      <label class="block text-sm text-ink-200 mb-1.5">Фото (до 3 шт., JPEG/PNG/WebP)</label>
+      <label id="dropzone" for="photos"
+             class="block cursor-pointer border-2 border-dashed border-ink-600 rounded-xl p-6 text-center text-sm text-ink-300 hover:border-accent/60 transition">
+        <span class="inline-flex items-center gap-2">{{ icon.plus() }} Перетащи файлы сюда или кликни</span>
+        <p class="mt-1 text-xs text-ink-300">Новые фото заменят старые</p>
+      </label>
+      <input id="photos" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple class="hidden">
+      <div id="thumbs" class="mt-3 grid grid-cols-3 gap-2"></div>
+    </div>
+
+    <div class="pt-2">
+      <button type="submit" class="btn btn-primary">{{ icon.sparkle() }}<span>Сохранить</span></button>
+    </div>
+  </div>
+
+  <aside class="space-y-5">
+    <div class="card p-5">
+      <div class="text-xs uppercase tracking-[0.18em] text-ink-300 mb-3">Превью</div>
+      <div class="flex items-start gap-3">
+        {% if photos and photos[0] %}
+        <img src="/media/profile/{{ uid }}/{{ photos[0].split('/')[-1] }}" class="w-14 h-14 rounded-xl object-cover">
+        {% else %}
+        <span class="cover-bg {{ uid | avatar_cls }} w-14 h-14 rounded-xl flex items-center justify-center text-white text-xl font-semibold">
+          {{ p.display_name | initial(uid) }}
+        </span>
+        {% endif %}
+        <div class="min-w-0">
+          <div class="font-medium truncate">{{ p.display_name or ('Участник ' ~ uid) }}</div>
+          {% if p.bio %}<div class="text-xs text-ink-300 line-clamp-2">{{ p.bio }}</div>{% endif %}
+          {% if p.github_url %}
+          <div class="mt-1 inline-flex items-center gap-1 text-xs text-ink-300 truncate">{{ icon.github() }} {{ p.github_url.replace('https://github.com/', '') }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if photos %}
+    <div class="card p-5">
+      <div class="text-xs uppercase tracking-[0.18em] text-ink-300 mb-3">Текущие фото</div>
+      <div class="grid grid-cols-3 gap-2">
+        {% for rel in photos %}
+        <img src="/media/profile/{{ uid }}/{{ rel.split('/')[-1] }}" alt="" class="rounded-lg object-cover w-full h-20 border border-ink-600">
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </aside>
+</form>
+<script>
+(function () {
+  const inp = document.getElementById('photos');
+  const dz = document.getElementById('dropzone');
+  const thumbs = document.getElementById('thumbs');
+  if (!inp || !dz) return;
+  function render() {
+    thumbs.innerHTML = '';
+    const files = Array.from(inp.files || []).slice(0, 3);
+    files.forEach(f => {
+      const url = URL.createObjectURL(f);
+      const wrap = document.createElement('div');
+      wrap.className = 'relative rounded-lg overflow-hidden border border-ink-600';
+      wrap.innerHTML = '<img src="' + url + '" class="w-full h-20 object-cover">' +
+        '<div class="absolute bottom-0 left-0 right-0 px-1.5 py-0.5 text-[10px] text-ink-200 bg-ink-900/70 truncate num">' +
+        f.name + '</div>';
+      thumbs.appendChild(wrap);
+    });
+  }
+  inp.addEventListener('change', render);
+  ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation();
+    dz.classList.add('border-accent');
+  }));
+  ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation();
+    dz.classList.remove('border-accent');
+  }));
+  dz.addEventListener('drop', e => {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+      const dt = new DataTransfer();
+      Array.from(e.dataTransfer.files).slice(0, 3).forEach(f => dt.items.add(f));
+      inp.files = dt.files;
+      render();
+    }
+  });
+})();
+</script>
+{% endblock %}

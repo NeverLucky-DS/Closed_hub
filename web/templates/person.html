@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% block main %}
+<a href="/people" class="inline-flex items-center gap-1 text-sm text-ink-300 hover:text-ink-100 mb-5">
+  <span class="rotate-180">{{ icon.chevron_right() }}</span> К списку
+</a>
+
+{% set photos = p.photo_paths or [] %}
+<section class="card overflow-hidden">
+  <div class="cover-bg {{ pid | avatar_cls }} h-32 md:h-40"></div>
+  <div class="px-5 md:px-8 pb-7 -mt-12 md:-mt-14">
+    <div class="flex flex-col md:flex-row md:items-end md:gap-6">
+      {% if photos and photos[0] %}
+      <img src="/media/profile/{{ pid }}/{{ photos[0].split('/')[-1] }}"
+           alt="" class="w-24 h-24 md:w-28 md:h-28 rounded-2xl object-cover ring-4 ring-ink-800 shadow-soft">
+      {% else %}
+      <span class="w-24 h-24 md:w-28 md:h-28 rounded-2xl ring-4 ring-ink-800 cover-bg {{ pid | avatar_cls }} flex items-center justify-center text-white text-3xl font-semibold shadow-soft">
+        {{ p.display_name | initial(pid) }}
+      </span>
+      {% endif %}
+      <div class="mt-4 md:mt-0 md:pb-2 min-w-0 flex-1">
+        <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">
+          {{ p.display_name or ('Участник ' ~ pid) }}
+        </h1>
+        <a href="{{ p.github_url }}" rel="noopener" target="_blank"
+           class="mt-2 inline-flex items-center gap-1.5 text-sm text-ink-200 hover:text-accent">
+          {{ icon.github() }}
+          <span class="truncate">{{ p.github_url.replace('https://github.com/', '') }}</span>
+        </a>
+      </div>
+    </div>
+
+    {% if p.bio %}
+    <div class="mt-6 max-w-2xl text-ink-200 leading-relaxed whitespace-pre-wrap">{{ p.bio }}</div>
+    {% endif %}
+  </div>
+</section>
+
+{% if photos and photos|length > 1 %}
+<section class="mt-6">
+  <h2 class="text-sm uppercase tracking-[0.18em] text-ink-300 mb-3">Галерея</h2>
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+    {% for rel in photos %}
+    <a href="/media/profile/{{ pid }}/{{ rel.split('/')[-1] }}" target="_blank" class="block">
+      <img src="/media/profile/{{ pid }}/{{ rel.split('/')[-1] }}"
+           alt="" class="rounded-xl border border-ink-600 object-cover w-full h-44 hover:opacity-90 transition">
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

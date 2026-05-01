@@ -57,10 +57,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             sheet = append_hr_contact_row(
                 company=row2["company"],
                 contact_ref=str(row2["contact_ref"]),
-                role_hint=row2["role_hint"],
-                vacancies_hint=row2["vacancies_hint"],
                 summary=row2["summary"],
-                source_user_id=int(row2["source_user_id"]),
                 hr_db_id=hr_id,
             )
         pts_note = f" +{pts_hr} оч." if pts_hr else ""

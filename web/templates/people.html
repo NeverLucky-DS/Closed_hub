@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% block main %}
+<header class="mb-7">
+  <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Сообщество</div>
+  <h1 class="mt-1 text-2xl md:text-3xl font-semibold tracking-tight">Люди хаба</h1>
+  <p class="mt-1 text-sm text-ink-300">Участники, которые заполнили GitHub. Карточка ведёт на профиль.</p>
+</header>
+
+{% if profiles %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+  {% for r in profiles %}
+  {% set photos = r.photo_paths or [] %}
+  <a href="/people/{{ r.telegram_user_id }}" class="card card-hover p-5 flex gap-4 items-start group">
+    <span class="relative flex-shrink-0">
+      {% if photos and photos[0] %}
+      <img src="/media/profile/{{ r.telegram_user_id }}/{{ photos[0].split('/')[-1] }}"
+           alt="" class="w-14 h-14 rounded-xl object-cover">
+      {% else %}
+      <span class="cover-bg {{ r.telegram_user_id | avatar_cls }} w-14 h-14 rounded-xl flex items-center justify-center text-white text-xl font-semibold">
+        {{ r.display_name | initial(r.telegram_user_id) }}
+      </span>
+      {% endif %}
+    </span>
+    <span class="min-w-0 flex-1">
+      <span class="block font-medium tracking-tight text-ink-100 truncate group-hover:text-white">
+        {{ r.display_name or ('Участник ' ~ r.telegram_user_id) }}
+      </span>
+      {% if r.bio %}
+      <span class="block text-sm text-ink-300 line-clamp-2 mt-1">{{ r.bio }}</span>
+      {% endif %}
+      <span class="mt-3 inline-flex items-center gap-1.5 text-xs text-ink-300">
+        {{ icon.github() }}
+        <span class="truncate">{{ r.github_url.replace('https://github.com/', '') }}</span>
+      </span>
+    </span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card p-10 text-center">
+  <div class="mx-auto w-12 h-12 rounded-xl cover-bg cover-5 flex items-center justify-center text-white">{{ icon.users() }}</div>
+  <p class="mt-4 text-ink-200">Пока никто не заполнил GitHub в профиле.</p>
+  <p class="mt-1 text-sm text-ink-300">Будь первым — открой «Профиль» и добавь ссылку.</p>
+</div>
+{% endif %}
+{% endblock %}

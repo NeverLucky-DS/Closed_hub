@@ -50,7 +50,31 @@ CREATE TABLE IF NOT EXISTS events (
     source_user_id BIGINT NOT NULL,
     status TEXT NOT NULL DEFAULT 'published',
     published_message_id INT,
+    starts_at TIMESTAMPTZ,
+    ends_at TIMESTAMPTZ,
+    ai_summary TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS web_login_codes (
+    id BIGSERIAL PRIMARY KEY,
+    telegram_user_id BIGINT NOT NULL,
+    code_hash TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_web_login_codes_user_expires
+    ON web_login_codes (telegram_user_id, expires_at DESC);
+
+CREATE TABLE IF NOT EXISTS member_profiles (
+    telegram_user_id BIGINT PRIMARY KEY REFERENCES members (telegram_user_id) ON DELETE CASCADE,
+    display_name TEXT,
+    bio TEXT,
+    github_url TEXT NOT NULL DEFAULT 'https://github.com/',
+    photo_paths JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS hr_contacts (
