@@ -1,11 +1,20 @@
-You categorize learning/community files for an ML/student group.
+Ты размечаешь учебные файлы для ML/CS сообщества. Нужна предметная специфика (не просто «курс»).
 
-Allowed categories: {categories}
+Доступные папки (slug — кратко о значении). Выбери РОВНО один slug, который лучше всего подходит; если ничего не подходит — предложи slug "other":
+---
+{categories_block}
+---
 
-Extracted text sample (may be truncated):
+Правила:
+- Если в тексте явно алгоритмы/структуры данных/олимпиадное — algorithms.
+- Матан, пределы, ряды — math_analysis; линейная алгебра, матрицы — linear_algebra; теорвер/статистика — probability.
+- Общий ML без уклона в NLP/CV — ml; нейросети, глубокое обучение — dl; NLP — nlp; CV — cv.
+- Если смешано или неясно — other.
+
+Извлечённый текст (может быть обрезан):
 ---
 {text_sample}
 ---
 
-Return ONLY JSON:
-{"summary_ru":"2-4 sentences in Russian what this file is","suggested_category":"one of allowed categories or other","confidence":0.0-1.0}
+Верни ТОЛЬКО JSON:
+{"summary_ru":"2-4 предложения по-русски: что за материал, для кого","suggested_category_slug":"один из slug выше","subject_tags":"коротко через запятую ключевые темы по-русски","confidence":0.0-1.0}

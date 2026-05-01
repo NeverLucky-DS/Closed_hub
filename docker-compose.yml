@@ -10,13 +10,23 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U closedhub -d closedhub"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
 
   bot:
     build: .
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     env_file:
       - .env
+    environment:
+      # В контейнере localhost — это сам бот; Postgres — сервис postgres в сети compose.
+      DATABASE_URL: postgresql://closedhub:closedhub@postgres:5432/closedhub
     volumes:
       - ./storage:/app/storage
     restart: unless-stopped

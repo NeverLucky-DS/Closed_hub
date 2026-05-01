@@ -314,6 +314,33 @@ async def get_hr_contact(pool: asyncpg.Pool, hr_contact_id: int) -> asyncpg.Reco
         return await conn.fetchrow("SELECT * FROM hr_contacts WHERE id = $1", hr_contact_id)
 
 
+async def list_file_categories(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT slug, label_ru FROM file_categories ORDER BY label_ru ASC",
+        )
+        return list(rows)
+
+
+async def ensure_file_category(
+    pool: asyncpg.Pool,
+    slug: str,
+    label_ru: str,
+    created_by: int | None,
+) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO file_categories (slug, label_ru, created_by)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (slug) DO UPDATE SET label_ru = EXCLUDED.label_ru
+            """,
+            slug,
+            label_ru,
+            created_by,
+        )
+
+
 async def insert_file_record(
     pool: asyncpg.Pool,
     storage_path: str,
@@ -324,13 +351,16 @@ async def insert_file_record(
     summary: str | None = None,
     suggested_category: str | None = None,
     extracted_text_preview: str | None = None,
+    original_filename: str | None = None,
+    subject_tags: str | None = None,
 ) -> int:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             INSERT INTO files
-            (storage_path, sha256, mime_type, uploaded_by, status, summary, suggested_category, extracted_text_preview)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            (storage_path, sha256, mime_type, uploaded_by, status, summary, suggested_category,
+             extracted_text_preview, original_filename, subject_tags)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING id
             """,
             storage_path,
@@ -341,6 +371,8 @@ async def insert_file_record(
             summary,
             suggested_category,
             extracted_text_preview,
+            original_filename,
+            subject_tags,
         )
         return int(row["id"])
 
@@ -353,6 +385,8 @@ async def update_file_record(
     summary: str | None = None,
     suggested_category: str | None = None,
     confirmed_category: str | None = None,
+    storage_path: str | None = None,
+    subject_tags: str | None = None,
 ) -> None:
     async with pool.acquire() as conn:
         sets: list[str] = []
@@ -374,6 +408,14 @@ async def update_file_record(
             sets.append(f"confirmed_category = ${idx}")
             args.append(confirmed_category)
             idx += 1
+        if storage_path is not None:
+            sets.append(f"storage_path = ${idx}")
+            args.append(storage_path)
+            idx += 1
+        if subject_tags is not None:
+            sets.append(f"subject_tags = ${idx}")
+            args.append(subject_tags)
+            idx += 1
         if not sets:
             return
         args.append(file_id)
@@ -384,6 +426,22 @@ async def update_file_record(
 async def get_file_record(pool: asyncpg.Pool, file_id: int) -> asyncpg.Record | None:
     async with pool.acquire() as conn:
         return await conn.fetchrow("SELECT * FROM files WHERE id = $1", file_id)
+
+
+async def list_library_files(pool: asyncpg.Pool, limit: int = 40) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, storage_path, sha256, mime_type, summary, confirmed_category,
+                   original_filename, uploaded_by, created_at, status
+            FROM files
+            WHERE status = 'confirmed'
+            ORDER BY created_at DESC
+            LIMIT $1
+            """,
+            limit,
+        )
+        return list(rows)
 
 
 async def log_llm_call(

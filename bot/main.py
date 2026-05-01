@@ -3,13 +3,19 @@ import logging
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from bot.handlers.callbacks import on_callback
+from bot.handlers.library_cmd import files_command
 from bot.handlers.messages import on_text_and_media
 from bot.handlers.start import start_cmd
+from bot.handlers.voice import on_voice
 from config import get_settings
 from db.pool import close_pool, create_pool
 from db.repo import seed_whitelist_and_members
+from db.schema_patch import apply_pending_patches
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 log = logging.getLogger(__name__)
 
 
@@ -17,8 +23,9 @@ async def post_init(application: Application) -> None:
     settings = get_settings()
     pool = await create_pool()
     application.bot_data["pool"] = pool
+    await apply_pending_patches(pool)
     await seed_whitelist_and_members(pool, settings.whitelist_seed_ids)
-    log.info("DB pool ready, whitelist seeded if configured")
+    log.info("DB ready (migrations + whitelist seed)")
 
 
 async def post_shutdown(application: Application) -> None:
@@ -37,7 +44,9 @@ def main() -> None:
         .build()
     )
     app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CallbackQueryHandler(on_callback, pattern=r"^(hry|hrn|fiy|fin|fic):"))
+    app.add_handler(CommandHandler("files", files_command))
+    app.add_handler(CallbackQueryHandler(on_callback))
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.VOICE, on_voice))
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE & (~filters.COMMAND),

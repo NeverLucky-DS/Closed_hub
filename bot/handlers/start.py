@@ -16,11 +16,12 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if st != "active":
         await update.effective_message.reply_text(
             "Привет. Доступ только по приглашению: кто-то из белого списка должен "
-            "отправить боту твой UID командой «добавь» или через меню «Добавить участника» "
-            "и переслать твоё сообщение."
+            "добавить тебя через меню «Добавить участника», указав твой @username "
+            "(если он публичный) или числовой Telegram ID."
         )
         return
     await update.effective_message.reply_text(
-        "Ты в базе. Отправляй анонсы мероприятий, UID HR + контекст, или PDF.",
+        "Ты в базе. Анонсы мероприятий, UID HR + контекст, PDF, голосовые (если есть GROQ_API_KEY), "
+        "команда /files — библиотека файлов.",
         reply_markup=main_menu(wl),
     )

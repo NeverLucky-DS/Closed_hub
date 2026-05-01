@@ -38,7 +38,13 @@ class Settings(BaseSettings):
 
     hr_context_debounce_sec: int = 45
 
+    # Легаси: категории теперь в БД (file_categories); строка ниже не используется для кнопок.
     file_categories: str = "course,contest,notes,other"
+
+    groq_api_key: Optional[str] = None
+
+    google_sheet_id: Optional[str] = None
+    google_service_account_json_path: Optional[str] = None
 
     @field_validator("telegram_group_chat_id", mode="before")
     @classmethod

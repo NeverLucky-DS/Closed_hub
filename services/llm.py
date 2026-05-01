@@ -111,15 +111,31 @@ async def extract_hr(pool, telegram_uid: int, context_lines: list[str]) -> dict:
     return json.loads(raw)
 
 
-async def summarize_file(pool, text_sample: str, categories: list[str]) -> dict:
+async def summarize_file(pool, text_sample: str, categories_block: str) -> dict:
     settings = get_settings()
     template = _load_prompt("file_summarize.txt")
-    cats = ", ".join(categories)
-    user_block = template.replace("{categories}", cats).replace("{text_sample}", text_sample[:14000])
+    user_block = template.replace("{categories_block}", categories_block).replace(
+        "{text_sample}", text_sample[:14000]
+    )
     raw, _, _ = await mistral_chat(
         pool,
         purpose="file_summarize",
         model=settings.mistral_model_default,
+        system="Reply with JSON only.",
+        user=user_block,
+        json_mode=True,
+    )
+    return json.loads(raw)
+
+
+async def voice_gist(pool, transcript: str) -> dict:
+    settings = get_settings()
+    template = _load_prompt("voice_context.txt")
+    user_block = template.replace("{transcript}", transcript[:8000])
+    raw, _, _ = await mistral_chat(
+        pool,
+        purpose="voice_gist",
+        model=settings.mistral_model_routing,
         system="Reply with JSON only.",
         user=user_block,
         json_mode=True,
