@@ -1,0 +1,11 @@
+Extract structured info from HR contact context.
+
+Telegram UID: {telegram_uid}
+
+Context lines from the user:
+---
+{context_block}
+---
+
+Return ONLY JSON:
+{"company":string|null,"role_hint":string|null,"vacancies_hint":string|null,"summary_ru":"2-4 sentences in Russian"}

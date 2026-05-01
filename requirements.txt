@@ -1,0 +1,6 @@
+# Предпочтительно: uv sync (см. pyproject.toml + uv.lock)
+python-telegram-bot[ext]==21.10
+asyncpg==0.30.0
+pydantic-settings==2.7.1
+httpx==0.28.1
+pypdf==5.1.0

@@ -1,0 +1,14 @@
+You decide if a new event duplicates any existing one.
+
+New event text:
+---
+{new_text}
+---
+
+Existing events (may be empty):
+---
+{existing_block}
+---
+
+Return ONLY JSON: {"is_duplicate":true|false,"match_index":null|integer,"normalized_title":"short title or empty","should_add":true|false}
+If duplicate, should_add is false. If not duplicate and looks like a real event, should_add true.

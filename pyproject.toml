@@ -1,0 +1,24 @@
+[project]
+name = "closed-hub"
+version = "0.1.0"
+description = "Telegram-бот закрытого хаба: сбор мероприятий, HR, файлов в PostgreSQL + Mistral."
+requires-python = ">=3.11"
+dependencies = [
+    "python-telegram-bot[ext]==21.10",
+    "asyncpg==0.30.0",
+    "pydantic-settings==2.7.1",
+    "httpx==0.28.1",
+    "pypdf==5.1.0",
+]
+
+[project.scripts]
+closed-hub-bot = "bot.main:main"
+
+[dependency-groups]
+dev = [
+    "dvc>=3.48.0",
+]
+
+[tool.uv]
+package = false
+default-groups = []

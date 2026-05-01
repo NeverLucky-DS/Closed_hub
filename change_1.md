@@ -1,16 +1,28 @@
 ## Что добавлено
 
-- Cursor skill `product-fullstack-engineering` в `.cursor/skills/product-fullstack-engineering/SKILL.md`.
+- Каркас бота на `python-telegram-bot` 21: личные чаты, `/start`, меню, callback-кнопки.
+- PostgreSQL-схема (`db/schema.sql`): участники, белый список, сессии, входящие сообщения, мероприятия, HR-контакты с контекстом, файлы, лог вызовов LLM.
+- Docker Compose: Postgres + образ бота; локальное хранилище файлов в `./storage`.
+- Конфиг через `pydantic-settings` и `.env` (шаблон `.env.example`).
+- Маршрутизация: эвристики (PDF → файл, одинокий UID → HR) + Mistral JSON-классификатор (`prompts/classify.txt`).
+- Мероприятия: дедуп через Mistral + запись в БД + пост в forum topic при заданных `TELEGRAM_GROUP_CHAT_ID` и `TELEGRAM_EVENTS_TOPIC_ID`.
+- HR: UID отдельным сообщением, контекст батчами с debounce, извлечение полей Mistral, подтверждение inline.
+- Файлы: скачивание, SHA256-путь, извлечение текста PDF (`pypdf`), краткое описание и категория Mistral, подтверждение кнопками.
+- Секреты убраны из `links.txt`, добавлен `.gitignore`.
 
 ## Зачем
 
-- Чтобы агент в Cursor автоматически (или через `/product-fullstack-engineering`) опирался на ваши практики: Python/FastAPI, aiogram, PostgreSQL, AI, данные, продукт, комьюнити, деплой, документация.
+Закрытый сбор структурированных данных в одну БД с человеком в контуре для PDF/HR и публикацией событий в тему группы.
 
 ## Почему так
 
-- Формат соответствует [документации Cursor Skills](https://www.cursor.com/docs/context/skills): папка = `name` во frontmatter, есть `description` для релевантности.
+- Тонкие handlers, логика в `services/`, промпты в файлах, LLM в `services/llm.py` — как в правилах проекта.
+- Своя таблица `inbound_messages` вместо «истории» Telegram API.
+- MVP без лишних абстракций: прямой SQL в `db/repo.py`.
 
 ## Что улучшить позже
 
-- При необходимости включить `disable-model-invocation: true`, если хотите только ручной вызов skill.
-- Вынести длинные чеклисты в `references/` внутри skill для прогрессивной подгрузки.
+- Webhook + HTTPS, очередь на тяжёлые PDF, S3 вместо локального диска.
+- Эмбеддинги для дедупа мероприятий, ручная модерация «Опубликовать».
+- Явный rate limit на LLM по пользователю, ретраи Mistral.
+- Миграции Alembic вместо одного `schema.sql` при эволюции схемы.
