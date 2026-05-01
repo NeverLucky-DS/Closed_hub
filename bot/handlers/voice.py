@@ -5,10 +5,12 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from utils import nav_labels as N
 from bot.handlers.messages import _route_after_inbound
+from bot.keyboards import interview_hub_keyboard, interview_tell_keyboard
 from config import get_settings
 from db import repo
-from services import groq_voice, llm
+from services import groq_voice, llm, ml_forward_service
 
 log = logging.getLogger(__name__)
 
@@ -26,14 +28,30 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if state == "awaiting_invite":
         await repo.clear_session(pool, uid)
 
+    session_state, _ = await repo.get_session(pool, uid)
+
     st = await repo.member_status(pool, uid)
     if st != "active":
         await msg.reply_text("Нет доступа.")
         return
 
+    if await ml_forward_service.user_context_allows_hub_forward(pool, uid, session_state):
+        if await ml_forward_service.try_handle_forward(msg, context, pool, uid):
+            return
+
     pending_hr = await repo.get_hr_pending_confirm_for_user(pool, uid)
     if pending_hr:
-        await msg.reply_text("Сначала ответь по черновику HR кнопками.")
+        await msg.reply_text(
+            "Сначала нажми «Верно» или «Нет» под черновиком HR — без этого дальше не пойдём."
+        )
+        return
+
+    st_iv, _ = await repo.get_session(pool, uid)
+    if st_iv == "interview_hub":
+        await msg.reply_text(
+            f"В этом шаге удобнее кнопки: «{N.BTN_READ_INTERVIEWS}» или «{N.BTN_SHARE_INTERVIEW}».",
+            reply_markup=interview_hub_keyboard(),
+        )
         return
 
     if not settings.groq_api_key:
@@ -51,6 +69,19 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if not transcript:
         await msg.reply_text("Пустая расшифровка.")
+        return
+
+    state, payload = await repo.get_session(pool, uid)
+    if state == "interview_tell":
+        pl = dict(payload)
+        lines = list(pl.get("interview_lines") or [])
+        lines.append(transcript.strip())
+        pl["interview_lines"] = lines
+        await repo.set_session(pool, uid, "interview_tell", pl)
+        await msg.reply_text(
+            f"Добавил фрагмент из голосового. Продолжай или нажми «{N.BTN_STORY_DONE}».",
+            reply_markup=interview_tell_keyboard(),
+        )
         return
 
     gist = ""

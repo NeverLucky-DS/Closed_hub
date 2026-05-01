@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     telegram_topic_news: Optional[int] = None
     telegram_topic_discussion: Optional[int] = None
     telegram_topic_rating: Optional[int] = None
+    # Куда пересылать отобранные ML-материалы (если пусто — TELEGRAM_TOPIC_NEWS)
+    telegram_topic_ml_forward: Optional[int] = None
+
+    ml_forward_max_age_days: int = 21
+    ml_forward_daily_cap: int = 20
 
     # Устаревшее имя: если задано, перекрывает только публикацию мероприятий.
     telegram_events_topic_id: Optional[int] = None
@@ -65,6 +70,12 @@ class Settings(BaseSettings):
     def events_publish_topic_id(self) -> Optional[int]:
         if self.telegram_events_topic_id is not None:
             return self.telegram_events_topic_id
+        return self.telegram_topic_news
+
+    @property
+    def ml_forward_publish_topic_id(self) -> Optional[int]:
+        if self.telegram_topic_ml_forward is not None:
+            return self.telegram_topic_ml_forward
         return self.telegram_topic_news
 
     @property

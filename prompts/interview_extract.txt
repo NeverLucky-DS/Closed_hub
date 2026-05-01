@@ -1,0 +1,18 @@
+The user described a job interview in free form (possibly Russian). Extract structured fields.
+
+Raw text:
+---
+{raw_text}
+---
+
+Return ONLY JSON with keys:
+- "company_ru": string — company name in Russian (best guess; short)
+- "role": string|null — position / level
+- "when_text": string|null — when the interview was (date, month, "недавно", etc.)
+- "num_interviewers": number|null — how many interviewers if stated
+- "duration_text": string|null — how long the process / round took
+- "questions_summary": string|null — what they asked (short bullet-style in Russian)
+- "had_algorithm_task": boolean|null — true if coding/algo task mentioned, false if explicitly no, null if unclear
+- "notes_ru": string|null — other useful detail in 1-2 sentences Russian
+
+If company is unknown, set company_ru to "Не указано".

@@ -1,4 +1,4 @@
-Extract structured info from HR contact context.
+Extract structured info from HR contact context. The user writes in Russian; reply JSON field values in Russian where they are free text.
 
 Contact as given by the user (@username or numeric id string): {contact_identifier}
 
@@ -6,6 +6,16 @@ Context lines from the user:
 ---
 {context_block}
 ---
+
+Reference: typical employer names in our community (use EXACT spelling from list when the context clearly refers to one of these; if another employer is named explicitly, use that name instead):
+{employers_list_block}
+
+NEVER put these in the "company" field — they are venues, platforms, meetups, or community names, NOT the HR's employer:
+{venues_never_company_block}
+
+Rule: "company" = organization where the HR works or which they represent for hiring. If the user only says they met the person at a platform/meetup (e.g. Future Today) but names the real employer — company must be the employer, not the meetup. If the employer is unknown after reading the context, set "company" to null. Mention the meetup/platform only inside "summary_ru", not as company.
+
+{notes_ru}
 
 Return ONLY JSON:
 {"company":string|null,"role_hint":string|null,"vacancies_hint":string|null,"summary_ru":"2-4 sentences in Russian"}

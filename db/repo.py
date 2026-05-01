@@ -353,14 +353,15 @@ async def insert_file_record(
     extracted_text_preview: str | None = None,
     original_filename: str | None = None,
     subject_tags: str | None = None,
+    uploader_handle: str | None = None,
 ) -> int:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             INSERT INTO files
             (storage_path, sha256, mime_type, uploaded_by, status, summary, suggested_category,
-             extracted_text_preview, original_filename, subject_tags)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             extracted_text_preview, original_filename, subject_tags, uploader_handle)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING id
             """,
             storage_path,
@@ -373,6 +374,7 @@ async def insert_file_record(
             extracted_text_preview,
             original_filename,
             subject_tags,
+            uploader_handle,
         )
         return int(row["id"])
 
@@ -387,6 +389,7 @@ async def update_file_record(
     confirmed_category: str | None = None,
     storage_path: str | None = None,
     subject_tags: str | None = None,
+    confirmed_at: Any | None = None,
 ) -> None:
     async with pool.acquire() as conn:
         sets: list[str] = []
@@ -416,6 +419,10 @@ async def update_file_record(
             sets.append(f"subject_tags = ${idx}")
             args.append(subject_tags)
             idx += 1
+        if confirmed_at is not None:
+            sets.append(f"confirmed_at = ${idx}")
+            args.append(confirmed_at)
+            idx += 1
         if not sets:
             return
         args.append(file_id)
@@ -433,7 +440,7 @@ async def list_library_files(pool: asyncpg.Pool, limit: int = 40) -> list[asyncp
         rows = await conn.fetch(
             """
             SELECT id, storage_path, sha256, mime_type, summary, confirmed_category,
-                   original_filename, uploaded_by, created_at, status
+                   original_filename, uploaded_by, uploader_handle, created_at, confirmed_at, status
             FROM files
             WHERE status = 'confirmed'
             ORDER BY created_at DESC
@@ -479,3 +486,64 @@ async def search_events_ilike(pool: asyncpg.Pool, needle: str, limit: int = 5) -
             limit,
         )
         return [r["raw_text"] for r in rows]
+
+
+async def add_activity_points(
+    pool: asyncpg.Pool,
+    telegram_user_id: int,
+    points: int,
+    reason: str,
+    meta: dict[str, Any] | None,
+) -> int:
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                UPDATE members SET activity_points = activity_points + $2
+                WHERE telegram_user_id = $1
+                RETURNING activity_points
+                """,
+                telegram_user_id,
+                points,
+            )
+            if not row:
+                return 0
+            await conn.execute(
+                """
+                INSERT INTO activity_ledger (telegram_user_id, reason, points, meta)
+                VALUES ($1, $2, $3, $4::jsonb)
+                """,
+                telegram_user_id,
+                reason,
+                points,
+                json.dumps(meta or {}),
+            )
+            return int(row["activity_points"])
+
+
+async def get_member_activity_points(pool: asyncpg.Pool, telegram_user_id: int) -> int:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT activity_points FROM members WHERE telegram_user_id = $1",
+            telegram_user_id,
+        )
+        return int(row["activity_points"]) if row else 0
+
+
+async def count_activity_reason_since(
+    pool: asyncpg.Pool,
+    telegram_user_id: int,
+    reason: str,
+    since,
+) -> int:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT COUNT(*)::int AS n FROM activity_ledger
+            WHERE telegram_user_id = $1 AND reason = $2 AND created_at >= $3
+            """,
+            telegram_user_id,
+            reason,
+            since,
+        )
+        return int(row["n"]) if row else 0

@@ -5,7 +5,7 @@ from telegram.constants import ParseMode
 
 from config import get_settings
 from db import repo
-from services import llm
+from services import activity, llm
 
 
 async def handle_event_message(
@@ -14,6 +14,7 @@ async def handle_event_message(
     *,
     source_user_id: int,
     raw_text: str,
+    announcer_label: str,
 ) -> str:
     settings = get_settings()
     recent = await repo.recent_events_texts(pool, 25)
@@ -50,6 +51,14 @@ async def handle_event_message(
         source_user_id,
         status="published",
         published_message_id=pub_id,
+    )
+    await activity.award(
+        pool,
+        source_user_id,
+        "event_published",
+        {"has_forum_post": bool(pub_id)},
+        bot=bot,
+        announcer_label=announcer_label,
     )
     if pub_id:
         return "Добавил в базу и опубликовал в теме «Новости»."

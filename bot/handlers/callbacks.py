@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from telegram import InputFile, Update
 from telegram.ext import ContextTypes
 
 from db import repo
-from services import files_service
+from services import activity, files_service
+from utils.telegram_user import user_display_handle
 from services.google_sheets_hr import append_hr_contact_row
+from services import interviews_store
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +42,15 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             row["summary"],
             "confirmed",
         )
+        uh = user_display_handle(user)
+        pts_hr = await activity.award(
+            pool,
+            user.id,
+            "hr_contact_confirmed",
+            {"hr_id": hr_id},
+            bot=context.bot,
+            announcer_label=uh,
+        )
         row2 = await repo.get_hr_contact(pool, hr_id)
         sheet = "skipped"
         if row2:
@@ -51,17 +63,38 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 source_user_id=int(row2["source_user_id"]),
                 hr_db_id=hr_id,
             )
+        pts_note = f" +{pts_hr} оч." if pts_hr else ""
         if sheet == "ok":
-            done = "Сохранено. HR в базе и строка добавлена в Google Sheets."
+            done = f"Сохранено. HR в базе и строка добавлена в Google Sheets.{pts_note}"
         elif sheet == "error":
             done = (
                 "Сохранено в базу. Google Sheets не обновилась — проверь, что JSON ключ доступен боту "
                 "(в Docker: volume в docker-compose, переменная GOOGLE_SERVICE_ACCOUNT_JSON_HOST на хосте). "
                 "Подробности в логах контейнера."
+                f"{pts_note}"
             )
         else:
-            done = "Сохранено в базу. Google Sheets не настроен (нет GOOGLE_SHEET_ID или пути к ключу)."
+            done = f"Сохранено в базу. Google Sheets не настроен (нет GOOGLE_SHEET_ID или пути к ключу).{pts_note}"
         await query.edit_message_text(done)
+        return
+
+    if data.startswith("ivd:"):
+        if await repo.member_status(pool, user.id) != "active":
+            await query.answer("Нет доступа", show_alert=True)
+            return
+        slug = data.split(":", 1)[1]
+        if not re.fullmatch(r"[a-z0-9_\-]+", slug):
+            await query.answer("Некорректный выбор", show_alert=True)
+            return
+        path = interviews_store.path_for_slug(slug)
+        if not path.is_file():
+            await query.answer("Файл не найден", show_alert=True)
+            return
+        fname = f"{slug}_interviews.md"
+        with open(path, "rb") as fh:
+            document = InputFile(fh, filename=fname)
+            await context.bot.send_document(chat_id=user.id, document=document)
+        await query.answer("Отправил файл")
         return
 
     if data.startswith("hrn:"):
@@ -92,7 +125,13 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         cats = await repo.list_file_categories(pool)
         label = next((str(c["label_ru"]) for c in cats if c["slug"] == slug), slug)
         ok = await files_service.finalize_file_to_library(
-            pool, file_id=fid, user_id=user.id, slug=slug, label_ru=label
+            pool,
+            file_id=fid,
+            user_id=user.id,
+            slug=slug,
+            label_ru=label,
+            bot=context.bot,
+            announcer_label=user_display_handle(user),
         )
         if ok:
             await query.edit_message_text(f"Файл в папке «{label}» ({slug}).")
@@ -133,7 +172,13 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             slug,
         )
         ok = await files_service.finalize_file_to_library(
-            pool, file_id=fid, user_id=user.id, slug=slug, label_ru=label
+            pool,
+            file_id=fid,
+            user_id=user.id,
+            slug=slug,
+            label_ru=label,
+            bot=context.bot,
+            announcer_label=user_display_handle(user),
         )
         if ok:
             await query.edit_message_text(f"Файл в папке «{label}» ({slug}).")

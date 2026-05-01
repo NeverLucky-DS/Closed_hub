@@ -2,8 +2,20 @@ CREATE TABLE IF NOT EXISTS members (
     telegram_user_id BIGINT PRIMARY KEY,
     status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'revoked')),
     invited_by BIGINT REFERENCES members (telegram_user_id) ON DELETE SET NULL,
+    activity_points INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS activity_ledger (
+    id BIGSERIAL PRIMARY KEY,
+    telegram_user_id BIGINT NOT NULL,
+    reason TEXT NOT NULL,
+    points INT NOT NULL,
+    meta JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_ledger_user ON activity_ledger (telegram_user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS whitelist_users (
     telegram_user_id BIGINT PRIMARY KEY,
@@ -99,6 +111,8 @@ CREATE TABLE IF NOT EXISTS files (
     extracted_text_preview TEXT,
     original_filename TEXT,
     subject_tags TEXT,
+    uploader_handle TEXT,
+    confirmed_at TIMESTAMPTZ,
     uploaded_by BIGINT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

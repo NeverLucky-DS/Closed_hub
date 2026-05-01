@@ -28,7 +28,9 @@ async def files_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         fid = int(r["id"])
         cat = r["confirmed_category"] or "?"
         name = r["original_filename"] or Path(r["storage_path"]).name
-        lines.append(f"#{fid} · {cat} · {name[:40]}")
+        who = r.get("uploader_handle") or str(r["uploaded_by"])
+        ts = r["confirmed_at"] or r["created_at"]
+        lines.append(f"#{fid} · {cat} · {name[:36]} · {who} · {ts}")
         kb_rows.append([InlineKeyboardButton(f"⬇ {fid} {name[:24]}", callback_data=f"fdl:{fid}")])
 
     text = "\n".join(lines)

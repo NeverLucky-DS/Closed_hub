@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pypdf import PdfReader
@@ -10,7 +11,7 @@ from telegram.constants import ParseMode
 
 from config import get_settings
 from db import repo
-from services import file_storage, llm
+from services import activity, file_storage, llm
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +42,8 @@ async def finalize_file_to_library(
     user_id: int,
     slug: str,
     label_ru: str | None = None,
+    bot: Bot | None = None,
+    announcer_label: str | None = None,
 ) -> bool:
     row = await repo.get_file_record(pool, file_id)
     if not row or int(row["uploaded_by"]) != user_id:
@@ -59,6 +62,15 @@ async def finalize_file_to_library(
         status="confirmed",
         confirmed_category=slug,
         storage_path=new_path,
+        confirmed_at=datetime.now(timezone.utc),
+    )
+    await activity.award(
+        pool,
+        user_id,
+        "library_file_confirmed",
+        {"file_id": file_id, "slug": slug},
+        bot=bot,
+        announcer_label=announcer_label,
     )
     log.info("file_confirmed id=%s slug=%s user=%s", file_id, slug, user_id)
     return True
@@ -74,6 +86,7 @@ async def handle_document(
     mime_type: str | None,
     file_name: str | None,
     get_file_bytes,
+    uploader_handle: str | None = None,
 ) -> str:
     settings = get_settings()
     file_storage.library_root().mkdir(parents=True, exist_ok=True)
@@ -123,6 +136,7 @@ async def handle_document(
             extracted_text_preview=text_sample[:2000],
             original_filename=file_name,
             subject_tags=None,
+            uploader_handle=uploader_handle,
         )
         return "Файл сохранён, но суммаризация не удалась. Позже можно выбрать папку вручную."
 
@@ -145,6 +159,7 @@ async def handle_document(
         extracted_text_preview=text_sample[:2000],
         original_filename=file_name,
         subject_tags=tags_s,
+        uploader_handle=uploader_handle,
     )
 
     kb_rows: list[list[InlineKeyboardButton]] = []

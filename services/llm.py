@@ -94,17 +94,37 @@ async def dedup_event(pool, new_text: str, existing_texts: list[str]) -> dict:
 
 
 async def extract_hr(pool, contact_identifier: str, context_lines: list[str]) -> dict:
+    from services import hr_context_config
+
     settings = get_settings()
     template = _load_prompt("hr_extract.txt")
     ctx = "\n".join(context_lines[-40:])
+    el, vn, note = hr_context_config.prompt_blocks()
     user_block = (
-        template.replace("{contact_identifier}", str(contact_identifier)).replace(
-            "{context_block}", ctx[:12000]
-        )
+        template.replace("{contact_identifier}", str(contact_identifier))
+        .replace("{context_block}", ctx[:12000])
+        .replace("{employers_list_block}", el)
+        .replace("{venues_never_company_block}", vn)
+        .replace("{notes_ru}", note)
     )
     raw, _, _ = await mistral_chat(
         pool,
         purpose="hr_extract",
+        model=settings.mistral_model_default,
+        system="Reply with JSON only.",
+        user=user_block,
+        json_mode=True,
+    )
+    return json.loads(raw)
+
+
+async def extract_interview_story(pool, raw_text: str) -> dict:
+    settings = get_settings()
+    template = _load_prompt("interview_extract.txt")
+    user_block = template.replace("{raw_text}", raw_text[:12000])
+    raw, _, _ = await mistral_chat(
+        pool,
+        purpose="interview_extract",
         model=settings.mistral_model_default,
         system="Reply with JSON only.",
         user=user_block,

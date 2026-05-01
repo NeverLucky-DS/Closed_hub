@@ -45,6 +45,25 @@ ALTER TABLE hr_contacts DROP COLUMN IF EXISTS telegram_uid;
 ALTER TABLE hr_contacts ALTER COLUMN contact_ref SET NOT NULL;
 """,
     ),
+    (
+        4,
+        """
+ALTER TABLE members ADD COLUMN IF NOT EXISTS activity_points INT NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS activity_ledger (
+    id BIGSERIAL PRIMARY KEY,
+    telegram_user_id BIGINT NOT NULL,
+    reason TEXT NOT NULL,
+    points INT NOT NULL,
+    meta JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_activity_ledger_user ON activity_ledger (telegram_user_id, created_at DESC);
+
+ALTER TABLE files ADD COLUMN IF NOT EXISTS uploader_handle TEXT;
+ALTER TABLE files ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ;
+""",
+    ),
 ]
 
 
