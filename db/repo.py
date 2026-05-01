@@ -197,17 +197,17 @@ async def update_event_published(pool: asyncpg.Pool, event_id: int, message_id: 
 
 async def create_hr_contact_draft(
     pool: asyncpg.Pool,
-    telegram_uid: int,
+    contact_ref: str,
     source_user_id: int,
 ) -> int:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO hr_contacts (telegram_uid, status, source_user_id)
+            INSERT INTO hr_contacts (contact_ref, status, source_user_id)
             VALUES ($1, 'awaiting_context', $2)
             RETURNING id
             """,
-            telegram_uid,
+            contact_ref,
             source_user_id,
         )
         return int(row["id"])

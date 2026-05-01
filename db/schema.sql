@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE TABLE IF NOT EXISTS hr_contacts (
     id BIGSERIAL PRIMARY KEY,
-    telegram_uid BIGINT NOT NULL,
+    contact_ref TEXT NOT NULL,
     status TEXT NOT NULL,
     company TEXT,
     role_hint TEXT,

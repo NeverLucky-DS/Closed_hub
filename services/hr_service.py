@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -9,6 +10,31 @@ from config import get_settings
 from db import repo
 
 log = logging.getLogger(__name__)
+
+_HR_NUMERIC = re.compile(r"^\s*(\d{6,15})\s*$")
+_USERNAME = re.compile(r"^\s*@([a-zA-Z][a-zA-Z0-9_]{4,31})\s*$")
+
+
+def normalize_hr_contact_ref(raw: str) -> str:
+    s = raw.strip()
+    m = _USERNAME.match(s)
+    if m:
+        return "@" + m.group(1).lower()
+    m2 = _HR_NUMERIC.match(s)
+    if m2:
+        return m2.group(1)
+    return s
+
+
+def try_parse_hr_contact_line(text: str) -> str | None:
+    if not text or not text.strip():
+        return None
+    s = text.strip()
+    if _USERNAME.match(s):
+        return normalize_hr_contact_ref(s)
+    if _HR_NUMERIC.match(s):
+        return normalize_hr_contact_ref(s)
+    return None
 
 
 def _cancel_task(app_tasks: dict[int, asyncio.Task], hr_contact_id: int) -> None:
@@ -22,7 +48,7 @@ def schedule_hr_extract(
     *,
     hr_contact_id: int,
     chat_id: int,
-    telegram_uid: int,
+    contact_ref: str,
 ) -> None:
     settings = get_settings()
     debounce = max(5, settings.hr_context_debounce_sec)
@@ -39,7 +65,7 @@ def schedule_hr_extract(
                 return
             from services import llm
 
-            data = await llm.extract_hr(pool, telegram_uid, lines)
+            data = await llm.extract_hr(pool, contact_ref, lines)
             summary = data.get("summary_ru")
             await repo.update_hr_contact_summary(
                 pool,
@@ -62,6 +88,7 @@ def schedule_hr_extract(
             text = (
                 "Черновик контакта HR:\n\n"
                 f"{summary}\n\n"
+                f"Контакт: {contact_ref}\n"
                 f"Компания: {data.get('company')}\n"
                 f"Роль: {data.get('role_hint')}\n"
                 f"Вакансии: {data.get('vacancies_hint')}\n\n"
@@ -85,16 +112,23 @@ def schedule_hr_extract(
     tasks[hr_contact_id] = asyncio.create_task(_run())
 
 
-async def start_hr_uid_flow(pool, user_id: int, telegram_uid: int) -> tuple[int, str]:
+async def start_hr_contact_ref_flow(pool, user_id: int, contact_ref: str) -> tuple[int, str]:
+    norm = normalize_hr_contact_ref(contact_ref)
     draft = await repo.get_open_hr_draft_for_user(pool, user_id)
-    if draft and int(draft["telegram_uid"]) == telegram_uid:
+    if draft and normalize_hr_contact_ref(str(draft["contact_ref"])) == norm:
         hr_id = int(draft["id"])
     else:
-        hr_id = await repo.create_hr_contact_draft(pool, telegram_uid, user_id)
-    return hr_id, (
-        f"Принял UID {telegram_uid}. Напиши контекст: кто это, компания, зачем контакт. "
-        "Можно несколькими сообщениями — я соберу и предложу черновик."
+        hr_id = await repo.create_hr_contact_draft(pool, norm, user_id)
+    reply = (
+        f"Принял контакт: {norm}.\n\n"
+        "Расскажи про этого HR (можно несколькими сообщениями). По возможности укажи:\n"
+        "• откуда контакт — источник (какое мероприятие, чат, пост, рекомендация и т.п.);\n"
+        "• компанию и роль человека;\n"
+        "• как прошло общение — тон, настроение, насколько открыто отвечали;\n"
+        "• был ли личный контакт (писали в личку, встречались) или только публичное сообщение.\n\n"
+        "Когда допишешь — соберу черновик с кнопками подтверждения."
     )
+    return hr_id, reply
 
 
 async def append_hr_context_and_schedule(
@@ -102,7 +136,7 @@ async def append_hr_context_and_schedule(
     pool,
     *,
     hr_contact_id: int,
-    telegram_uid: int,
+    contact_ref: str,
     source_user_id: int,
     chat_id: int,
     text: str,
@@ -112,5 +146,5 @@ async def append_hr_context_and_schedule(
         application,
         hr_contact_id=hr_contact_id,
         chat_id=chat_id,
-        telegram_uid=telegram_uid,
+        contact_ref=contact_ref,
     )

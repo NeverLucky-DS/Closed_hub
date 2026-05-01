@@ -43,7 +43,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if row2:
             append_hr_contact_row(
                 company=row2["company"],
-                telegram_uid=int(row2["telegram_uid"]),
+                contact_ref=str(row2["contact_ref"]),
                 role_hint=row2["role_hint"],
                 vacancies_hint=row2["vacancies_hint"],
                 summary=row2["summary"],

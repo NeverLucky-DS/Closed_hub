@@ -93,12 +93,14 @@ async def dedup_event(pool, new_text: str, existing_texts: list[str]) -> dict:
     return json.loads(raw)
 
 
-async def extract_hr(pool, telegram_uid: int, context_lines: list[str]) -> dict:
+async def extract_hr(pool, contact_identifier: str, context_lines: list[str]) -> dict:
     settings = get_settings()
     template = _load_prompt("hr_extract.txt")
     ctx = "\n".join(context_lines[-40:])
     user_block = (
-        template.replace("{telegram_uid}", str(telegram_uid)).replace("{context_block}", ctx[:12000])
+        template.replace("{contact_identifier}", str(contact_identifier)).replace(
+            "{context_block}", ctx[:12000]
+        )
     )
     raw, _, _ = await mistral_chat(
         pool,

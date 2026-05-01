@@ -1,8 +1,9 @@
 """Идемпотентные патчи схемы для уже существующих БД (Docker volume)."""
 
-MIGRATION_ID = 2
-
-PATCH_SQL = """
+MIGRATIONS: list[tuple[int, str]] = [
+    (
+        2,
+        """
 CREATE TABLE IF NOT EXISTS file_categories (
     slug TEXT PRIMARY KEY,
     label_ru TEXT NOT NULL,
@@ -24,7 +25,27 @@ ON CONFLICT (slug) DO NOTHING;
 
 ALTER TABLE files ADD COLUMN IF NOT EXISTS original_filename TEXT;
 ALTER TABLE files ADD COLUMN IF NOT EXISTS subject_tags TEXT;
-"""
+""",
+    ),
+    (
+        3,
+        """
+ALTER TABLE hr_contacts ADD COLUMN IF NOT EXISTS contact_ref TEXT;
+DO $hr_mig$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'hr_contacts' AND column_name = 'telegram_uid'
+  ) THEN
+    UPDATE hr_contacts SET contact_ref = telegram_uid::text WHERE contact_ref IS NULL;
+  END IF;
+END $hr_mig$;
+UPDATE hr_contacts SET contact_ref = 'legacy' WHERE contact_ref IS NULL;
+ALTER TABLE hr_contacts DROP COLUMN IF EXISTS telegram_uid;
+ALTER TABLE hr_contacts ALTER COLUMN contact_ref SET NOT NULL;
+""",
+    ),
+]
 
 
 async def apply_pending_patches(pool) -> None:
@@ -37,8 +58,9 @@ async def apply_pending_patches(pool) -> None:
             )
             """
         )
-        row = await conn.fetchrow("SELECT 1 FROM schema_migrations WHERE id = $1", MIGRATION_ID)
-        if row:
-            return
-        await conn.execute(PATCH_SQL)
-        await conn.execute("INSERT INTO schema_migrations (id) VALUES ($1)", MIGRATION_ID)
+        for mid, sql in MIGRATIONS:
+            row = await conn.fetchrow("SELECT 1 FROM schema_migrations WHERE id = $1", mid)
+            if row:
+                continue
+            await conn.execute(sql)
+            await conn.execute("INSERT INTO schema_migrations (id) VALUES ($1)", mid)

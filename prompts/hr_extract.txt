@@ -1,6 +1,6 @@
 Extract structured info from HR contact context.
 
-Telegram UID: {telegram_uid}
+Contact as given by the user (@username or numeric id string): {contact_identifier}
 
 Context lines from the user:
 ---

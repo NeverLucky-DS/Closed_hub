@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-import re
-
-from services import llm
-
-_UID_SINGLE = re.compile(r"^\s*(\d{6,12})\s*$")
+from services import hr_service, llm
 
 
 def heuristic_route(text: str | None, has_document: bool, mime: str | None) -> str | None:
     if has_document:
         return "file_material"
-    if text and _UID_SINGLE.match(text.strip()):
+    if text and hr_service.try_parse_hr_contact_line(text.strip()):
         return "hr_contact"
     return None
 

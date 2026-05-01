@@ -15,7 +15,6 @@ from utils.text_slug import slugify_folder
 
 log = logging.getLogger(__name__)
 
-_UID_ONLY = re.compile(r"^\s*(\d{6,12})\s*$")
 _INVITE_UID = re.compile(r"^\s*(\d{6,15})\s*$")
 _USERNAME_INVITE = re.compile(r"^\s*@([a-zA-Z][a-zA-Z0-9_]{4,31})\s*$")
 
@@ -35,7 +34,7 @@ async def _help_reply(message: Message, is_whitelist: bool) -> None:
     text = (
         "Что можно отправить:\n"
         "• Пересланный или набранный текст про мероприятие — проверю дубликаты и опубликую в теме.\n"
-        "• Сначала числовой Telegram UID HR отдельным сообщением, затем контекст одним или несколькими сообщениями.\n"
+        "• Контакт HR: отдельным сообщением @username (например @ivan_hr) или числовой ID, затем контекст одним или несколькими сообщениями.\n"
         "• PDF или другой файл — разложу по папкам-библиотеке.\n"
         "• Голосовое сообщение — распознаю через Groq, затем обработаю как текст (нужен GROQ_API_KEY).\n"
         "• /files — список сохранённых файлов, скачать можно кнопкой.\n"
@@ -59,10 +58,10 @@ async def _route_after_inbound(
     mime: str | None,
 ) -> None:
     tr = (msg.text or msg.caption or "").strip()
-    if tr and _UID_ONLY.match(tr) and not has_doc:
+    hr_token = hr_service.try_parse_hr_contact_line(tr)
+    if hr_token and not has_doc:
         await repo.abandon_awaiting_hr_drafts(pool, uid)
-        tg_uid = int(tr)
-        _hr_id, reply = await hr_service.start_hr_uid_flow(pool, uid, tg_uid)
+        _hr_id, reply = await hr_service.start_hr_contact_ref_flow(pool, uid, hr_token)
         await msg.reply_text(reply)
         return
 
@@ -75,7 +74,7 @@ async def _route_after_inbound(
             context.application,
             pool,
             hr_contact_id=int(draft["id"]),
-            telegram_uid=int(draft["telegram_uid"]),
+            contact_ref=str(draft["contact_ref"]),
             source_user_id=uid,
             chat_id=chat_id,
             text=user_text,
@@ -141,14 +140,17 @@ async def _route_after_inbound(
                 context.application,
                 pool,
                 hr_contact_id=int(draft["id"]),
-                telegram_uid=int(draft["telegram_uid"]),
+                contact_ref=str(draft["contact_ref"]),
                 source_user_id=uid,
                 chat_id=chat_id,
                 text=user_text,
             )
             await msg.reply_text("Принял контекст для HR.")
             return
-        await msg.reply_text("Сначала пришли числовой Telegram UID контакта HR одним сообщением (только цифры).")
+        await msg.reply_text(
+            "Сначала пришли контакт HR одним сообщением: @username (например @ivan_hr) "
+            "или числовой Telegram ID, если он у тебя есть."
+        )
         return
 
     if intent == "file_material":
@@ -156,7 +158,7 @@ async def _route_after_inbound(
         return
 
     await msg.reply_text(
-        "Не понял задачу. Нажми «Справка» или опиши: мероприятие, HR UID + контекст, или прикрепи PDF."
+        "Не понял задачу. Нажми «Справка» или опиши: мероприятие, HR @ник + контекст, или прикрепи PDF."
     )
 
 

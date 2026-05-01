@@ -31,7 +31,7 @@ def _sanitize_worksheet_title(company: str | None, max_len: int = 99) -> str:
 def _header_row() -> list[str]:
     return [
         "Время (UTC)",
-        "Telegram UID HR",
+        "Контакт (@ник или ID)",
         "Роль / контакт",
         "Вакансии / направление",
         "Контекст / комментарий",
@@ -66,7 +66,7 @@ def _next_data_row(ws: gspread.Worksheet) -> int:
 def append_hr_contact_row(
     *,
     company: str | None,
-    telegram_uid: int,
+    contact_ref: str,
     role_hint: str | None,
     vacancies_hint: str | None,
     summary: str | None,
@@ -85,7 +85,7 @@ def append_hr_contact_row(
         ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
         data = [
             ts,
-            str(telegram_uid),
+            contact_ref,
             role_hint or "",
             vacancies_hint or "",
             (summary or "")[:4000],
