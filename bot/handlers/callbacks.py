@@ -40,8 +40,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             "confirmed",
         )
         row2 = await repo.get_hr_contact(pool, hr_id)
+        sheet = "skipped"
         if row2:
-            append_hr_contact_row(
+            sheet = append_hr_contact_row(
                 company=row2["company"],
                 contact_ref=str(row2["contact_ref"]),
                 role_hint=row2["role_hint"],
@@ -50,7 +51,17 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 source_user_id=int(row2["source_user_id"]),
                 hr_db_id=hr_id,
             )
-        await query.edit_message_text("Сохранено. HR добавлен в базу (и в таблицу, если настроен Google Sheets).")
+        if sheet == "ok":
+            done = "Сохранено. HR в базе и строка добавлена в Google Sheets."
+        elif sheet == "error":
+            done = (
+                "Сохранено в базу. Google Sheets не обновилась — проверь, что JSON ключ доступен боту "
+                "(в Docker: volume в docker-compose, переменная GOOGLE_SERVICE_ACCOUNT_JSON_HOST на хосте). "
+                "Подробности в логах контейнера."
+            )
+        else:
+            done = "Сохранено в базу. Google Sheets не настроен (нет GOOGLE_SHEET_ID или пути к ключу)."
+        await query.edit_message_text(done)
         return
 
     if data.startswith("hrn:"):

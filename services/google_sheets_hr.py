@@ -72,10 +72,11 @@ def append_hr_contact_row(
     summary: str | None,
     source_user_id: int,
     hr_db_id: int,
-) -> None:
+) -> str:
+    """skipped — нет GOOGLE_SHEET_ID или пути к ключу; ok — строка записана; error — сбой API/файла."""
     settings = get_settings()
     if not settings.google_sheet_id or not settings.google_service_account_json_path:
-        return
+        return "skipped"
     try:
         gc = gspread.service_account(filename=settings.google_service_account_json_path)
         sh = gc.open_by_key(settings.google_sheet_id)
@@ -98,5 +99,14 @@ def append_hr_contact_row(
             value_input_option="USER_ENTERED",
         )
         log.info("google_sheets hr row sheet=%s row=%s id=%s", title, row_i, hr_db_id)
+        return "ok"
+    except FileNotFoundError:
+        log.error(
+            "google_sheets: файл ключа не найден (%s). "
+            "Локально проверь GOOGLE_SERVICE_ACCOUNT_JSON_PATH; в Docker — volume в docker-compose и GOOGLE_SERVICE_ACCOUNT_JSON_HOST.",
+            settings.google_service_account_json_path,
+        )
+        return "error"
     except Exception:
         log.exception("google_sheets append failed")
+        return "error"

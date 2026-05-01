@@ -27,8 +27,12 @@ services:
     environment:
       # В контейнере localhost — это сам бот; Postgres — сервис postgres в сети compose.
       DATABASE_URL: postgresql://closedhub:closedhub@postgres:5432/closedhub
+      # Ключ Google: в образ не попадает (.dockerignore). Путь внутри контейнера — всегда этот файл.
+      GOOGLE_SERVICE_ACCOUNT_JSON_PATH: /app/secrets/google-service-account.json
     volumes:
       - ./storage:/app/storage
+      # Слева — файл на хосте (задай GOOGLE_SERVICE_ACCOUNT_JSON_HOST в .env, если имя другое)
+      - ${GOOGLE_SERVICE_ACCOUNT_JSON_HOST:-./closeml-fc7387cd4ce5.json}:/app/secrets/google-service-account.json:ro
     restart: unless-stopped
 
 volumes:
