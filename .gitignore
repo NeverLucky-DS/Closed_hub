@@ -8,3 +8,7 @@ __pycache__/
 storage/
 *.log
 .DS_Store
+
+# Ключи Google Cloud / сервисные аккаунты (локально, не в репозиторий)
+closeml-*.json
+*-service-account*.json

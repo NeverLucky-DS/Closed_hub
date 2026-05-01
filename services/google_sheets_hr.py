@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 
 import gspread
@@ -9,7 +10,57 @@ from config import get_settings
 
 log = logging.getLogger(__name__)
 
-WORKSHEET_TITLE = "HR_contacts"
+# Колонки A–D пустые; данные HR с E (5-я колонка) подряд — как таблица/CSV.
+_FIRST_DATA_COL = 5  # E
+_LAST_DATA_COL = 11  # K
+_HEADER_RANGE = "E1:K1"
+_DATA_RANGE_TMPL = "E{row}:K{row}"
+
+_INVALID_IN_TITLE = re.compile(r"[\[\]:\\/*?]")
+
+
+def _sanitize_worksheet_title(company: str | None, max_len: int = 99) -> str:
+    s = (company or "").strip() or "Без компании"
+    s = _INVALID_IN_TITLE.sub("_", s)
+    s = s.replace("'", "").strip()
+    if not s:
+        s = "Без компании"
+    return s[:max_len]
+
+
+def _header_row() -> list[str]:
+    return [
+        "Время (UTC)",
+        "Telegram UID HR",
+        "Роль / контакт",
+        "Вакансии / направление",
+        "Контекст / комментарий",
+        "Кто добавил (TG id)",
+        "ID в PostgreSQL",
+    ]
+
+
+def _get_or_create_worksheet(sh: gspread.Spreadsheet, title: str) -> gspread.Worksheet:
+    try:
+        return sh.worksheet(title)
+    except gspread.WorksheetNotFound:
+        return sh.add_worksheet(title=title, rows=2000, cols=_LAST_DATA_COL)
+
+
+def _ensure_headers(ws: gspread.Worksheet) -> None:
+    if ws.acell("E1").value:
+        return
+    ws.update(
+        _HEADER_RANGE,
+        [_header_row()],
+        value_input_option="USER_ENTERED",
+    )
+
+
+def _next_data_row(ws: gspread.Worksheet) -> int:
+    _ensure_headers(ws)
+    col_e = ws.col_values(_FIRST_DATA_COL)
+    return len(col_e) + 1
 
 
 def append_hr_contact_row(
@@ -28,38 +79,24 @@ def append_hr_contact_row(
     try:
         gc = gspread.service_account(filename=settings.google_service_account_json_path)
         sh = gc.open_by_key(settings.google_sheet_id)
-        try:
-            ws = sh.worksheet(WORKSHEET_TITLE)
-        except gspread.WorksheetNotFound:
-            ws = sh.add_worksheet(title=WORKSHEET_TITLE, rows=2000, cols=10)
-        if not ws.row_values(1):
-            ws.append_row(
-                [
-                    "Время (UTC)",
-                    "Компания",
-                    "Telegram UID HR",
-                    "Роль / кто это",
-                    "Вакансии / направление",
-                    "Контекст / комментарий",
-                    "Кто добавил (TG id)",
-                    "ID в PostgreSQL",
-                ],
-                value_input_option="USER_ENTERED",
-            )
+        title = _sanitize_worksheet_title(company)
+        ws = _get_or_create_worksheet(sh, title)
+        row_i = _next_data_row(ws)
         ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        ws.append_row(
-            [
-                ts,
-                company or "",
-                str(telegram_uid),
-                role_hint or "",
-                vacancies_hint or "",
-                (summary or "")[:4000],
-                str(source_user_id),
-                str(hr_db_id),
-            ],
+        data = [
+            ts,
+            str(telegram_uid),
+            role_hint or "",
+            vacancies_hint or "",
+            (summary or "")[:4000],
+            str(source_user_id),
+            str(hr_db_id),
+        ]
+        ws.update(
+            _DATA_RANGE_TMPL.format(row=row_i),
+            [data],
             value_input_option="USER_ENTERED",
         )
-        log.info("google_sheets hr row appended id=%s company=%s", hr_db_id, company)
+        log.info("google_sheets hr row sheet=%s row=%s id=%s", title, row_i, hr_db_id)
     except Exception:
         log.exception("google_sheets append failed")

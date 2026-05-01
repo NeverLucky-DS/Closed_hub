@@ -10,3 +10,5 @@ __pycache__
 .DS_Store
 .env
 !.env.example
+closeml-*.json
+*-service-account*.json
