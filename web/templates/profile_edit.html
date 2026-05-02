@@ -5,7 +5,7 @@
   <div>
     <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Профиль</div>
     <h1 class="mt-1 text-2xl md:text-3xl font-semibold tracking-tight">Как тебя видят другие</h1>
-    <p class="mt-1 text-sm text-ink-300">GitHub обязателен. Bio, фото и резюме (PDF) — по желанию.</p>
+    <p class="mt-1 text-sm text-ink-300 max-w-xl">GitHub обязателен для списка «Люди». Остальное — по желанию: платформы, вуз, резюме и фото.</p>
   </div>
   <a href="/people/{{ uid }}" class="btn">{{ icon.user() }}<span>Открыть мой профиль</span></a>
 </header>
@@ -15,54 +15,97 @@
 {% endif %}
 
 {% set photos = p.photo_paths | valid_photos %}
+{% include "_universities_datalist.html" %}
 
 <form method="post" action="/me" enctype="multipart/form-data" class="grid grid-cols-1 lg:grid-cols-[1fr_22rem] gap-5">
-  <div class="card p-5 md:p-6 space-y-5">
-    <div>
-      <label for="display_name" class="block text-sm text-ink-200 mb-1.5">Имя на сайте</label>
-      <input id="display_name" name="display_name" type="text" class="field"
-             placeholder="например, Кирилл" value="{{ p.display_name or '' }}">
-    </div>
-    <div>
-      <label for="github_url" class="block text-sm text-ink-200 mb-1.5">GitHub <span class="text-rose-300">*</span></label>
-      <input id="github_url" name="github_url" type="text" class="field" required
-             placeholder="https://github.com/username" value="{{ p.github_url or '' }}">
-      <p class="mt-1.5 text-xs text-ink-300">Формат: <span class="num">https://github.com/username</span></p>
-    </div>
-    <div>
-      <label for="bio" class="block text-sm text-ink-200 mb-1.5">О себе</label>
-      <textarea id="bio" name="bio" rows="6" class="field"
-                placeholder="чем занимаешься, чем можешь помочь, чего ищешь">{{ p.bio or '' }}</textarea>
-    </div>
-
-    <div>
-      <label class="block text-sm text-ink-200 mb-1.5">Резюме (PDF, до {{ hub_settings.web_max_resume_mb }} МБ)</label>
-      {% if p.resume_path %}
-      <div class="flex flex-wrap items-center gap-3 mb-2">
-        <a href="/api/profile/{{ uid }}/resume" class="btn text-sm">{{ icon.file_pdf() }}<span>Скачать текущее</span></a>
-        <label class="inline-flex items-center gap-2 text-sm text-ink-300 cursor-pointer">
-          <input type="checkbox" name="clear_resume" value="1" class="rounded border-ink-600">
-          Удалить резюме при сохранении
-        </label>
+  <div class="space-y-5">
+    <div class="card p-5 md:p-6 space-y-5">
+      <div>
+        <label for="display_name" class="block text-sm text-ink-200 mb-1.5">Имя на сайте</label>
+        <input id="display_name" name="display_name" type="text" class="field"
+               placeholder="как обращаться на главной и в списке людей" value="{{ p.display_name or '' }}">
       </div>
-      {% endif %}
-      <input id="resume" name="resume" type="file" accept="application/pdf,.pdf" class="field py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-ink-700 file:px-3 file:py-1.5 file:text-sm">
-      <p class="mt-1 text-xs text-ink-300">Новый файл заменит старый. Без галочки «удалить» старое сохранится, если не выбрать новый файл.</p>
+      <div>
+        <label for="github_url" class="block text-sm text-ink-200 mb-1.5">GitHub <span class="text-rose-300">*</span></label>
+        <input id="github_url" name="github_url" type="text" class="field" required
+               placeholder="https://github.com/username" value="{{ p.github_url or '' }}">
+        <p class="mt-1.5 text-xs text-ink-300">Формат: <span class="num">https://github.com/username</span></p>
+      </div>
+      <div>
+        <label for="bio" class="block text-sm text-ink-200 mb-1.5">О себе</label>
+        <textarea id="bio" name="bio" rows="5" class="field"
+                  placeholder="чем занимаешься, чем можешь помочь, чего ищешь">{{ p.bio or '' }}</textarea>
+      </div>
     </div>
 
-    <div>
-      <label class="block text-sm text-ink-200 mb-1.5">Фото (до 3 шт., JPEG/PNG/WebP)</label>
-      <label id="dropzone" for="photos"
-             class="block cursor-pointer border-2 border-dashed border-ink-600 rounded-xl p-6 text-center text-sm text-ink-300 hover:border-accent/60 transition">
-        <span class="inline-flex items-center gap-2">{{ icon.plus() }} Перетащи файлы сюда или кликни</span>
-        <p class="mt-1 text-xs text-ink-300">Новые фото заменят старые</p>
-      </label>
-      <input id="photos" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple class="hidden">
-      <div id="thumbs" class="mt-3 grid grid-cols-3 gap-2"></div>
+    <div class="card p-5 md:p-6 space-y-5">
+      <div class="text-xs uppercase tracking-[0.18em] text-ink-400 font-medium mb-1">Платформы и учёба</div>
+      <p class="text-xs text-ink-500 -mt-2 mb-2">Ссылки только с <span class="num">https://</span> — профиль HF, Kaggle, LeetCode.</p>
+      <div>
+        <label for="hf_url" class="block text-sm text-ink-200 mb-1.5">Hugging Face</label>
+        <input id="hf_url" name="hf_url" type="url" inputmode="url" class="field"
+               placeholder="https://huggingface.co/username" value="{{ p.hf_url or '' }}">
+      </div>
+      <div>
+        <label for="kaggle_url" class="block text-sm text-ink-200 mb-1.5">Kaggle</label>
+        <input id="kaggle_url" name="kaggle_url" type="url" inputmode="url" class="field"
+               placeholder="https://www.kaggle.com/username" value="{{ p.kaggle_url or '' }}">
+      </div>
+      <div>
+        <label for="leetcode_url" class="block text-sm text-ink-200 mb-1.5">LeetCode</label>
+        <input id="leetcode_url" name="leetcode_url" type="url" inputmode="url" class="field"
+               placeholder="https://leetcode.com/u/username" value="{{ p.leetcode_url or '' }}">
+      </div>
+      <div>
+        <label for="education_institution" class="block text-sm text-ink-200 mb-1.5">Вуз / образование</label>
+        <input id="education_institution" name="education_institution" type="text" class="field"
+               list="universities-suggestions" maxlength="400"
+               placeholder="выбери из подсказок или напиши свой вариант" value="{{ p.education_institution or '' }}">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label for="education_year_from" class="block text-sm text-ink-200 mb-1.5">Год начала</label>
+          <input id="education_year_from" name="education_year_from" type="number" class="field num" min="1980" max="2040" step="1"
+                 placeholder="напр. 2021" value="{{ p.education_year_from or '' }}">
+        </div>
+        <div>
+          <label for="education_year_to" class="block text-sm text-ink-200 mb-1.5">Год окончания</label>
+          <input id="education_year_to" name="education_year_to" type="number" class="field num" min="1980" max="2040" step="1"
+                 placeholder="напр. 2025" value="{{ p.education_year_to or '' }}">
+        </div>
+      </div>
     </div>
 
-    <div class="pt-2">
-      <button type="submit" class="btn btn-primary">{{ icon.sparkle() }}<span>Сохранить</span></button>
+    <div class="card p-5 md:p-6 space-y-5">
+      <div>
+        <label class="block text-sm text-ink-200 mb-1.5">Резюме (PDF, до {{ hub_settings.web_max_resume_mb }} МБ)</label>
+        {% if p.resume_path %}
+        <div class="flex flex-wrap items-center gap-3 mb-2">
+          <a href="/api/profile/{{ uid }}/resume" class="btn text-sm">{{ icon.file_pdf() }}<span>Скачать текущее</span></a>
+          <label class="inline-flex items-center gap-2 text-sm text-ink-300 cursor-pointer">
+            <input type="checkbox" name="clear_resume" value="1" class="rounded border-ink-600">
+            Удалить резюме при сохранении
+          </label>
+        </div>
+        {% endif %}
+        <input id="resume" name="resume" type="file" accept="application/pdf,.pdf" class="field py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-ink-700 file:px-3 file:py-1.5 file:text-sm">
+        <p class="mt-1 text-xs text-ink-300">Новый файл заменит старый.</p>
+      </div>
+
+      <div>
+        <label class="block text-sm text-ink-200 mb-1.5">Фото (до 3 шт., JPEG/PNG/WebP)</label>
+        <label id="dropzone" for="photos"
+               class="block cursor-pointer border-2 border-dashed border-ink-600 rounded-xl p-6 text-center text-sm text-ink-300 hover:border-accent/60 transition">
+          <span class="inline-flex items-center gap-2">{{ icon.plus() }} Перетащи файлы сюда или кликни</span>
+          <p class="mt-1 text-xs text-ink-300">Новые фото заменят старые</p>
+        </label>
+        <input id="photos" name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple class="hidden">
+        <div id="thumbs" class="mt-3 grid grid-cols-3 gap-2"></div>
+      </div>
+
+      <div class="pt-2">
+        <button type="submit" class="btn btn-primary">{{ icon.sparkle() }}<span>Сохранить</span></button>
+      </div>
     </div>
   </div>
 
@@ -71,7 +114,7 @@
       <div class="text-xs uppercase tracking-[0.18em] text-ink-300 mb-3">Превью</div>
       <div class="flex items-start gap-3">
         {% if photos and photos[0] %}
-        <img src="/media/profile/{{ uid }}/{{ photos[0].split('/')[-1] }}" class="w-14 h-14 rounded-xl object-cover">
+        <img src="/media/profile/{{ uid }}/{{ photos[0].split('/')[-1] }}" class="w-14 h-14 rounded-xl object-cover" alt="">
         {% else %}
         <span class="w-14 h-14 rounded-xl flex items-center justify-center text-xl font-semibold bg-ink-700 ring-1 ring-ink-600 text-ink-100">
           {{ p.display_name | initial(uid) }}
@@ -79,7 +122,10 @@
         {% endif %}
         <div class="min-w-0">
           <div class="font-medium truncate">{{ p.display_name or ('Участник ' ~ uid) }}</div>
-          {% if p.bio %}<div class="text-xs text-ink-300 line-clamp-2">{{ p.bio }}</div>{% endif %}
+          {% if p.education_institution %}
+          <div class="text-xs text-ink-400 mt-0.5 line-clamp-2">{{ p.education_institution }}</div>
+          {% endif %}
+          {% if p.bio %}<div class="text-xs text-ink-300 line-clamp-2 mt-1">{{ p.bio }}</div>{% endif %}
           {% if p.github_url %}
           <div class="mt-1 inline-flex items-center gap-1 text-xs text-ink-300 truncate">{{ icon.github() }} {{ p.github_url.replace('https://github.com/', '') }}</div>
           {% endif %}

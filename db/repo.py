@@ -385,6 +385,24 @@ async def ensure_file_category(
         )
 
 
+async def find_active_file_by_sha256(
+    pool: asyncpg.Pool, sha256_hex: str
+) -> asyncpg.Record | None:
+    """Файл с тем же хэшем, который ещё «жив» в системе (не удалён и не отменён)."""
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT id, status, original_filename, confirmed_category, suggested_category,
+                   uploaded_by, created_at
+            FROM files
+            WHERE sha256 = $1 AND status NOT IN ('deleted', 'cancelled')
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            sha256_hex,
+        )
+
+
 async def insert_file_record(
     pool: asyncpg.Pool,
     storage_path: str,
@@ -733,6 +751,12 @@ async def upsert_member_profile(
     github_url: str | None = None,
     photo_paths: list[str] | None = None,
     resume_path: Any = _UNSET,
+    hf_url: Any = _UNSET,
+    kaggle_url: Any = _UNSET,
+    leetcode_url: Any = _UNSET,
+    education_institution: Any = _UNSET,
+    education_year_from: Any = _UNSET,
+    education_year_to: Any = _UNSET,
 ) -> None:
     async with pool.acquire() as conn:
         existing = await conn.fetchrow(
@@ -763,6 +787,30 @@ async def upsert_member_profile(
                 sets.append(f"resume_path = ${idx}")
                 args.append(resume_path)
                 idx += 1
+            if hf_url is not _UNSET:
+                sets.append(f"hf_url = ${idx}")
+                args.append(hf_url)
+                idx += 1
+            if kaggle_url is not _UNSET:
+                sets.append(f"kaggle_url = ${idx}")
+                args.append(kaggle_url)
+                idx += 1
+            if leetcode_url is not _UNSET:
+                sets.append(f"leetcode_url = ${idx}")
+                args.append(leetcode_url)
+                idx += 1
+            if education_institution is not _UNSET:
+                sets.append(f"education_institution = ${idx}")
+                args.append(education_institution)
+                idx += 1
+            if education_year_from is not _UNSET:
+                sets.append(f"education_year_from = ${idx}")
+                args.append(education_year_from)
+                idx += 1
+            if education_year_to is not _UNSET:
+                sets.append(f"education_year_to = ${idx}")
+                args.append(education_year_to)
+                idx += 1
             if not sets:
                 return
             sets.append("updated_at = now()")
@@ -771,12 +819,23 @@ async def upsert_member_profile(
             await conn.execute(q, *args)
         else:
             rp_ins = None if resume_path is _UNSET else resume_path
+            hf_ins = None if hf_url is _UNSET else hf_url
+            kg_ins = None if kaggle_url is _UNSET else kaggle_url
+            lc_ins = None if leetcode_url is _UNSET else leetcode_url
+            edu_ins = None if education_institution is _UNSET else education_institution
+            yf_ins = None if education_year_from is _UNSET else education_year_from
+            yt_ins = None if education_year_to is _UNSET else education_year_to
             await conn.execute(
                 """
                 INSERT INTO member_profiles (
-                    telegram_user_id, display_name, bio, github_url, photo_paths, resume_path, updated_at
+                    telegram_user_id, display_name, bio, github_url, photo_paths, resume_path,
+                    hf_url, kaggle_url, leetcode_url, education_institution,
+                    education_year_from, education_year_to, updated_at
                 )
-                VALUES ($1, $2, $3, COALESCE($4, 'https://github.com/'), COALESCE($5::jsonb, '[]'::jsonb), $6, now())
+                VALUES (
+                    $1, $2, $3, COALESCE($4, 'https://github.com/'), COALESCE($5::jsonb, '[]'::jsonb), $6,
+                    $7, $8, $9, $10, $11, $12, now()
+                )
                 """,
                 telegram_user_id,
                 display_name,
@@ -784,6 +843,12 @@ async def upsert_member_profile(
                 github_url if github_url is not None else "https://github.com/",
                 json.dumps(photo_paths if photo_paths is not None else []),
                 rp_ins,
+                hf_ins,
+                kg_ins,
+                lc_ins,
+                edu_ins,
+                yf_ins,
+                yt_ins,
             )
 
 
@@ -791,7 +856,9 @@ async def list_public_profiles(pool: asyncpg.Pool, limit: int = 200) -> list[asy
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT p.telegram_user_id, p.display_name, p.bio, p.github_url, p.photo_paths, p.resume_path
+            SELECT p.telegram_user_id, p.display_name, p.bio, p.github_url, p.photo_paths, p.resume_path,
+                   p.hf_url, p.kaggle_url, p.leetcode_url, p.education_institution,
+                   p.education_year_from, p.education_year_to
             FROM member_profiles p
             INNER JOIN members m ON m.telegram_user_id = p.telegram_user_id
             WHERE m.status = 'active'

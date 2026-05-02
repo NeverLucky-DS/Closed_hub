@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% block main %}
+<div class="max-w-2xl">
+  <div class="relative rounded-3xl border border-ink-500/70 bg-gradient-to-br from-ink-800/80 via-ink-900/40 to-ink-900/80 p-8 md:p-10 shadow-soft ring-1 ring-white/[0.04] overflow-hidden">
+    <div class="absolute -right-16 -top-16 w-56 h-56 rounded-full bg-accent/15 blur-3xl pointer-events-none"></div>
+    <div class="absolute -left-20 bottom-0 w-48 h-48 rounded-full bg-accent-2/10 blur-3xl pointer-events-none"></div>
+    <div class="relative">
+      <p class="text-[11px] uppercase tracking-[0.22em] text-ink-400 font-medium">Добро пожаловать</p>
+      <h1 class="mt-3 text-2xl md:text-3xl font-semibold tracking-tight text-ink-50 leading-snug">
+        {% if display_name %}
+        Привет, {{ display_name }}!
+        {% else %}
+        Привет!
+        {% endif %}
+      </h1>
+      <p class="mt-4 text-sm md:text-[15px] text-ink-300 leading-relaxed">
+        Это домашняя точка входа в хаб. Имя в приветствии берётся из поля «Имя на сайте» в
+        <a href="/me" class="text-accent hover:text-accent-2 underline underline-offset-2">профиле</a>
+        — заполни его, чтобы здесь было обращение по-человечески.
+      </p>
+    </div>
+  </div>
+
+  <details class="mt-8 group rounded-2xl border border-ink-500/70 bg-ink-800/30 open:shadow-soft open:ring-1 open:ring-accent/20 transition-shadow">
+    <summary class="cursor-pointer list-none flex items-center justify-between gap-3 px-5 py-4 md:px-6 md:py-5 rounded-2xl hover:bg-ink-800/50 transition-colors [&::-webkit-details-marker]:hidden">
+      <span class="font-semibold text-ink-100 flex items-center gap-2">
+        {{ icon.layers() }}
+        Навигация по сайту
+      </span>
+      <span class="text-ink-500 group-open:rotate-180 transition-transform">{{ icon.chevron_down() }}</span>
+    </summary>
+    <div class="px-5 pb-5 md:px-6 md:pb-6 pt-0 text-sm text-ink-300 leading-relaxed space-y-4 border-t border-ink-600/60">
+      <p class="pt-4 text-ink-200">Кратко, что где лежит (слева на десктопе, сверху и горизонтальной полосой на телефоне):</p>
+      <ul class="space-y-3 text-ink-300">
+        <li><span class="text-accent font-medium">Файлы</span> — библиотека материалов по темам; отсюда же можно закрепить документ за компанией.</li>
+        <li><span class="text-accent font-medium">Новости</span> — лента событий и анонсов из чата.</li>
+        <li><span class="text-accent font-medium">Выжимка</span> — сжатое резюме того, что происходило.</li>
+        <li><span class="text-accent font-medium">Хакатоны</span> — команды и заявки.</li>
+        <li><span class="text-accent font-medium">Компании</span> — карточки работодателей: HR, собесы, вложения из библиотеки.</li>
+        <li><span class="text-accent font-medium">Люди</span> — участники с заполненным профилем; из карточки можно открыть страницу человека.</li>
+        <li><span class="text-accent font-medium">Профиль</span> — как тебя видят другие: имя, ссылки, образование, резюме.</li>
+      </ul>
+      <p class="text-xs text-ink-500">Вход только через Telegram: пароль не храним, код приходит в бот.</p>
+    </div>
+  </details>
+
+  <div class="mt-8 flex flex-wrap gap-3">
+    <a href="/library" class="btn btn-primary rounded-xl px-5 py-3 font-semibold">{{ icon.folder() }} В библиотеку</a>
+    <a href="/me" class="btn rounded-xl px-5 py-3 border-ink-600 bg-ink-800/50">{{ icon.user() }} Профиль</a>
+  </div>
+</div>
+{% endblock %}

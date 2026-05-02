@@ -61,6 +61,30 @@ def _github_ok(url: str) -> bool:
     return u.startswith("https://github.com/") and len(u) > len("https://github.com/")
 
 
+def _optional_https_url(raw: str | None) -> tuple[str | None, str | None]:
+    s = (raw or "").strip()
+    if not s:
+        return None, None
+    if len(s) > 480 or ".." in s or "\n" in s or "\r" in s:
+        return None, "некорректная ссылка"
+    if not s.startswith("https://"):
+        return None, "нужен адрес с https://"
+    return s, None
+
+
+def _parse_optional_year(raw: str | None) -> int | None:
+    s = (raw or "").strip()
+    if not s:
+        return None
+    try:
+        y = int(s)
+    except ValueError:
+        return None
+    if y < 1980 or y > 2040:
+        return None
+    return y
+
+
 def _event_header(rec: Any) -> str:
     t = rec.get("normalized_title")
     if t and str(t).strip():
@@ -461,13 +485,25 @@ async def root(request: Request, pool=Depends(pool_dep)):
     if await repo.member_status(pool, uid) != "active":
         request.session.clear()
         return RedirectResponse("/login", status_code=302)
-    return RedirectResponse("/library", status_code=302)
+    await repo.ensure_member_profile_row(pool, uid)
+    prof = await repo.get_member_profile(pool, uid)
+    return _templates.TemplateResponse(
+        request,
+        "home.html",
+        {
+            "title": "Хаб",
+            "nav": "home",
+            "uid": uid,
+            "display_name": (prof.get("display_name") if prof else None) or "",
+        },
+        headers=_no_store_headers(),
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     if session_uid(request) is not None:
-        return RedirectResponse("/library", status_code=302)
+        return RedirectResponse("/", status_code=302)
     return _templates.TemplateResponse(
         request,
         "login.html",
@@ -1730,6 +1766,12 @@ async def page_me_save(
     display_name: str = Form(""),
     bio: str = Form(""),
     github_url: str = Form(""),
+    hf_url: str = Form(""),
+    kaggle_url: str = Form(""),
+    leetcode_url: str = Form(""),
+    education_institution: str = Form(""),
+    education_year_from: str = Form(""),
+    education_year_to: str = Form(""),
     clear_resume: str | None = Form(None),
     resume: UploadFile | None = File(None),
     photos: list[UploadFile] = File(default_factory=list),
@@ -1756,6 +1798,47 @@ async def page_me_save(
             },
             status_code=400,
         )
+
+    async def prof_err(msg: str):
+        return _templates.TemplateResponse(
+            request,
+            "profile_edit.html",
+            {
+                "title": "Мой профиль",
+                "nav": "me",
+                "p": await repo.get_member_profile(pool, uid),
+                "uid": uid,
+                "github_ok": _github_ok,
+                "error": msg,
+            },
+            status_code=400,
+        )
+
+    hf_u, hf_e = _optional_https_url(hf_url)
+    if hf_e:
+        return await prof_err(f"Hugging Face: {hf_e}")
+    kg_u, kg_e = _optional_https_url(kaggle_url)
+    if kg_e:
+        return await prof_err(f"Kaggle: {kg_e}")
+    lc_u, lc_e = _optional_https_url(leetcode_url)
+    if lc_e:
+        return await prof_err(f"LeetCode: {lc_e}")
+
+    edu_raw = (education_institution or "").strip()
+    if len(edu_raw) > 400:
+        return await prof_err("Название вуза не длиннее 400 символов.")
+    edu_final = edu_raw or None
+
+    raw_yf = (education_year_from or "").strip()
+    raw_yt = (education_year_to or "").strip()
+    yf = _parse_optional_year(raw_yf) if raw_yf else None
+    yt = _parse_optional_year(raw_yt) if raw_yt else None
+    if raw_yf and yf is None:
+        return await prof_err("Год начала обучения: число от 1980 до 2040 или пусто.")
+    if raw_yt and yt is None:
+        return await prof_err("Год окончания: число от 1980 до 2040 или пусто.")
+    if yf is not None and yt is not None and yf > yt:
+        return await prof_err("Год начала не может быть позже года окончания.")
 
     settings = get_settings()
     max_b = settings.web_max_profile_photo_mb * 1024 * 1024
@@ -1890,5 +1973,11 @@ async def page_me_save(
         github_url=g,
         photo_paths=final_photos,
         resume_path=resume_relpath,
+        hf_url=hf_u,
+        kaggle_url=kg_u,
+        leetcode_url=lc_u,
+        education_institution=edu_final,
+        education_year_from=yf,
+        education_year_to=yt,
     )
     return RedirectResponse("/me", status_code=303)

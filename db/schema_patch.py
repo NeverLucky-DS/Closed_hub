@@ -214,6 +214,25 @@ CREATE INDEX IF NOT EXISTS idx_company_reviews_company
     ON company_interview_reviews (company_id, created_at DESC);
 """,
     ),
+    (
+        12,
+        """
+CREATE INDEX IF NOT EXISTS idx_files_sha256_active
+    ON files (sha256)
+    WHERE status NOT IN ('deleted', 'cancelled');
+""",
+    ),
+    (
+        13,
+        """
+ALTER TABLE member_profiles ADD COLUMN IF NOT EXISTS hf_url TEXT;
+ALTER TABLE member_profiles ADD COLUMN IF NOT EXISTS kaggle_url TEXT;
+ALTER TABLE member_profiles ADD COLUMN IF NOT EXISTS leetcode_url TEXT;
+ALTER TABLE member_profiles ADD COLUMN IF NOT EXISTS education_institution TEXT;
+ALTER TABLE member_profiles ADD COLUMN IF NOT EXISTS education_year_from INT;
+ALTER TABLE member_profiles ADD COLUMN IF NOT EXISTS education_year_to INT;
+""",
+    ),
 ]
 
 

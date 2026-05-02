@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0a0d14">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Хаб">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/static/manifest.json">
   <title>{% block title %}{{ title }}{% endblock %} · Хаб</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -52,9 +57,9 @@
 <div class="min-h-screen md:flex">
   {# Sidebar (md+) #}
   <aside class="hidden md:flex md:flex-col md:w-60 md:fixed md:inset-y-0 md:left-0 md:px-3 md:py-4 md:border-r md:border-ink-600 md:bg-ink-900/80 md:backdrop-blur-xl">
-    <a href="/library" class="flex items-center gap-2 px-2 py-2">
-      <span class="text-accent">{{ icon.logo() }}</span>
-      <span class="font-semibold tracking-tight">Хаб</span>
+    <a href="/" class="flex items-center gap-3 mx-0 mb-1 px-3 py-3 rounded-2xl border transition-colors min-h-[3.5rem] {% if nav == 'home' %}border-accent/35 bg-ink-800/60 ring-1 ring-accent/25{% else %}border-transparent hover:border-ink-600 hover:bg-ink-800/40{% endif %}">
+      <span class="text-accent flex-shrink-0">{{ icon.logo() }}</span>
+      <span class="font-semibold tracking-tight text-lg leading-tight">Хаб</span>
     </a>
     <nav class="mt-5 flex flex-col gap-1">
       <a href="/library" class="nav-link {{ 'active' if nav == 'library' else '' }}">
@@ -89,10 +94,10 @@
   </aside>
 
   {# Top-nav (mobile) #}
-  <header class="md:hidden sticky top-0 z-30 flex items-center justify-between gap-3 px-4 py-3 bg-ink-900/85 backdrop-blur border-b border-ink-600">
-    <a href="/library" class="flex items-center gap-2">
+  <header class="md:hidden sticky top-0 z-30 flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 bg-ink-900/85 backdrop-blur border-b border-ink-600">
+    <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-2xl border min-h-[3rem] {% if nav == 'home' %}border-accent/35 bg-ink-800/50{% else %}border-ink-600/80 bg-ink-800/30{% endif %}">
       <span class="text-accent">{{ icon.logo() }}</span>
-      <span class="font-semibold">Хаб</span>
+      <span class="font-semibold text-base">Хаб</span>
     </a>
     <a href="/logout" class="text-ink-300 text-sm">{{ icon.logout() }}</a>
   </header>
@@ -106,7 +111,7 @@
     <a href="/me" class="nav-link whitespace-nowrap {{ 'active' if nav == 'me' else '' }}">{{ icon.user() }}<span>Профиль</span></a>
   </nav>
 
-  <main class="flex-1 md:ml-60 px-4 md:px-10 py-6 md:py-10 max-w-6xl">
+  <main class="flex-1 md:ml-60 px-4 md:px-10 py-6 md:py-10 max-w-6xl pb-[max(1.5rem,env(safe-area-inset-bottom))]">
     {% block main %}{% endblock %}
   </main>
 </div>

@@ -129,6 +129,12 @@ CREATE TABLE IF NOT EXISTS member_profiles (
     github_url TEXT NOT NULL DEFAULT 'https://github.com/',
     photo_paths JSONB NOT NULL DEFAULT '[]'::jsonb,
     resume_path TEXT,
+    hf_url TEXT,
+    kaggle_url TEXT,
+    leetcode_url TEXT,
+    education_institution TEXT,
+    education_year_from INT,
+    education_year_to INT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -212,6 +218,10 @@ CREATE TABLE IF NOT EXISTS files (
     uploaded_by BIGINT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS idx_files_sha256_active
+    ON files (sha256)
+    WHERE status NOT IN ('deleted', 'cancelled');
 
 CREATE TABLE IF NOT EXISTS company_files (
     id BIGSERIAL PRIMARY KEY,

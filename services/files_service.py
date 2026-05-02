@@ -15,6 +15,12 @@ from services import activity, file_storage, llm
 
 log = logging.getLogger(__name__)
 
+_STATUS_RU = {
+    "confirmed": "уже в библиотеке",
+    "awaiting_confirm": "уже загружен, ждёт выбора папки",
+    "processing": "обрабатывается",
+}
+
 
 def _extract_pdf_text(path: Path, max_chars: int = 20000) -> str:
     reader = PdfReader(str(path))
@@ -97,6 +103,25 @@ async def handle_document(
         return f"Файл слишком большой. Лимит {settings.max_pdf_size_mb} МБ."
 
     h = hashlib.sha256(data).hexdigest()
+
+    existing = await repo.find_active_file_by_sha256(pool, h)
+    if existing:
+        eid = int(existing["id"])
+        st = str(existing["status"])
+        st_ru = _STATUS_RU.get(st, st)
+        oname = existing.get("original_filename") or ""
+        cat = existing.get("confirmed_category") or existing.get("suggested_category")
+        extra = ""
+        if oname:
+            extra = f" Имя в системе: {oname}."
+        if cat:
+            extra += f" Категория: {cat}."
+        log.info("file_upload_duplicate sha256=%s… existing_id=%s", h[:16], eid)
+        return (
+            "Этот файл уже есть в хабе (совпадение по SHA-256 содержимого). "
+            f"Запись #{eid}, {st_ru}.{extra} Повторно загружать не нужно."
+        )
+
     staging = file_storage.staging_dir_for_hash(h)
     ext = ".bin"
     if file_name and "." in file_name:
