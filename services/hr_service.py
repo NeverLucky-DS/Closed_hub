@@ -112,6 +112,34 @@ def schedule_hr_extract(
     tasks[hr_contact_id] = asyncio.create_task(_run())
 
 
+def hr_draft_cancel_keyboard(hr_contact_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "Отменить добавление HR",
+                    callback_data=f"hrx:{hr_contact_id}",
+                )
+            ]
+        ]
+    )
+
+
+def cancel_hr_debounce(application, hr_contact_id: int) -> None:
+    tasks: dict[int, asyncio.Task] = application.bot_data.get("hr_debounce_tasks") or {}
+    _cancel_task(tasks, hr_contact_id)
+
+
+async def cancel_hr_gathering(application, pool, user_id: int) -> bool:
+    draft = await repo.get_open_hr_draft_for_user(pool, user_id)
+    if not draft:
+        return False
+    hid = int(draft["id"])
+    cancel_hr_debounce(application, hid)
+    await repo.abandon_awaiting_hr_drafts(pool, user_id)
+    return True
+
+
 async def start_hr_contact_ref_flow(pool, user_id: int, contact_ref: str) -> tuple[int, str]:
     norm = normalize_hr_contact_ref(contact_ref)
     draft = await repo.get_open_hr_draft_for_user(pool, user_id)
@@ -127,7 +155,8 @@ async def start_hr_contact_ref_flow(pool, user_id: int, contact_ref: str) -> tup
         "• где вы пересеклись — митап, Future Today, чат (это не замена названия компании);\n"
         "• роль, тон общения, насколько открыто отвечал;\n"
         "• писали в личку или только публично.\n\n"
-        "Когда закончишь, соберу черновик — под ним будут кнопки «Верно» и «Нет»."
+        "Когда закончишь, соберу черновик — под ним будут кнопки «Верно» и «Нет».\n\n"
+        "Отменить добавление HR: кнопка под этим сообщением или напиши «Отменить» / «Отменить HR»."
     )
     return hr_id, reply
 

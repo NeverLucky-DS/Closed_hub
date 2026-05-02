@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from pathlib import Path
 
 from telegram import InputFile, Update
 from telegram.ext import ContextTypes
 
+from bot.keyboards import main_menu
 from db import repo
-from services import activity, files_service
-from utils.telegram_user import user_display_handle
+from services import activity, events_service, files_service, hr_service, interviews_store
 from services.google_sheets_hr import append_hr_contact_row
-from services import interviews_store
+from utils.telegram_user import user_display_handle
 
 log = logging.getLogger(__name__)
 
@@ -20,12 +21,81 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     query = update.callback_query
     if not query or not query.data:
         return
-    await query.answer()
     pool = context.application.bot_data["pool"]
     user = update.effective_user
     if not user:
         return
     data = query.data
+
+    if data.startswith("hrx:"):
+        hr_id = int(data.split(":", 1)[1])
+        row = await repo.get_hr_contact(pool, hr_id)
+        if not row or int(row["source_user_id"]) != user.id:
+            await query.answer("Нет доступа", show_alert=True)
+            return
+        if str(row["status"]) != "awaiting_context":
+            await query.answer("Уже не в режиме добавления HR", show_alert=True)
+            return
+        hr_service.cancel_hr_debounce(context.application, hr_id)
+        ok = await repo.abandon_hr_contact_by_id(pool, hr_id, user.id)
+        if not ok:
+            await query.answer("Не удалось отменить", show_alert=True)
+            return
+        await query.answer("Отменено")
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        wl = await repo.is_whitelist(pool, user.id)
+        await context.bot.send_message(
+            chat_id=user.id,
+            text="Добавление HR отменено.",
+            reply_markup=main_menu(wl),
+        )
+        return
+
+    if data.startswith("eva:"):
+        mid = int(data.split(":", 1)[1])
+        bucket = context.application.bot_data.setdefault("event_publish_anyway", {})
+        key = f"{user.id}:{mid}"
+        entry = bucket.pop(key, None)
+        if not entry or time.time() > float(entry.get("expires", 0)):
+            await query.answer("Устарело — отправь анонс текстом снова.", show_alert=True)
+            return
+        await query.answer()
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        raw = str(entry["raw"])
+        try:
+            reply = await events_service.handle_event_message(
+                pool,
+                context.bot,
+                context.application,
+                source_user_id=user.id,
+                raw_text=raw,
+                announcer_label=user_display_handle(user),
+                source_message=None,
+            )
+        except Exception:
+            log.exception("eva force publish")
+            reply = "Не удалось опубликовать. Попробуй позже."
+        await context.bot.send_message(chat_id=user.id, text=reply)
+        return
+
+    if data.startswith("evc:"):
+        mid = int(data.split(":", 1)[1])
+        bucket = context.application.bot_data.setdefault("event_publish_anyway", {})
+        bucket.pop(f"{user.id}:{mid}", None)
+        await query.answer("Ок")
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return
+
+    await query.answer()
 
     if data.startswith("hry:"):
         hr_id = int(data.split(":", 1)[1])

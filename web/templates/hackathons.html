@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% block main %}
+<header class="mb-7 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+  <div>
+    <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Сбор команд</div>
+    <h1 class="mt-1 text-2xl md:text-3xl font-semibold tracking-tight">Хакатоны и мероприятия</h1>
+    <p class="mt-1 text-sm text-ink-300 max-w-xl">Создай команду, позови участников. Свободные места видно как пустые «аватарки» на карточке команды.</p>
+  </div>
+  <a href="/hackathons/create" class="btn btn-primary shrink-0">{{ icon.plus() }}<span>Новая команда</span></a>
+</header>
+
+{% if teams %}
+<div class="grid gap-4 md:grid-cols-2 max-w-4xl">
+  {% for t in teams %}
+  <a href="/hackathons/{{ t.id }}" class="card card-hover p-5 block">
+    <h2 class="font-semibold text-ink-100 leading-snug">{{ t.title }}</h2>
+    <p class="mt-2 text-sm text-ink-300 line-clamp-2">{{ t.description or "Без описания" }}</p>
+    <div class="mt-4 flex items-center gap-1 flex-wrap">
+      {% set filled = t.member_count or 0 %}
+      {% set mx = t.max_members %}
+      {% for i in range(mx) %}
+        {% if i < filled %}
+        <span class="w-9 h-9 rounded-full bg-ink-600 ring-1 ring-ink-500 flex items-center justify-center text-xs text-ink-200 num" title="Участник">●</span>
+        {% else %}
+        <span class="w-9 h-9 rounded-full border-2 border-dashed border-ink-500 bg-ink-800/40" title="Свободно"></span>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <div class="mt-3 text-xs text-ink-400 num">
+      {{ filled }} / {{ mx }} ·
+      {% if t.starts_at %}с {{ t.starts_at | dt_short }}{% else %}дата начала не указана{% endif %}
+      {% if t.ends_at %} — до {{ t.ends_at | dt_short }}{% endif %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card p-10 text-center max-w-lg">
+  <div class="mx-auto w-12 h-12 rounded-xl bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-accent">{{ icon.sparkle() }}</div>
+  <p class="mt-4 text-ink-200">Пока нет открытых команд.</p>
+  <p class="mt-1 text-sm text-ink-300">Создай первую — кнопка выше.</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -17,6 +17,10 @@ def profile_root() -> Path:
     return Path(get_settings().file_storage_path) / "profiles"
 
 
+def events_covers_root() -> Path:
+    return Path(get_settings().file_storage_path) / "events" / "covers"
+
+
 def staging_dir_for_hash(sha256: str) -> Path:
     base = library_root() / "_staging" / sha256[:2]
     base.mkdir(parents=True, exist_ok=True)

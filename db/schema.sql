@@ -53,8 +53,62 @@ CREATE TABLE IF NOT EXISTS events (
     starts_at TIMESTAMPTZ,
     ends_at TIMESTAMPTZ,
     ai_summary TEXT,
+    cover_image_path TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS event_reactions (
+    id BIGSERIAL PRIMARY KEY,
+    event_id BIGINT NOT NULL REFERENCES events (id) ON DELETE CASCADE,
+    telegram_user_id BIGINT NOT NULL,
+    emoji TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (event_id, telegram_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_reactions_event ON event_reactions (event_id);
+
+CREATE TABLE IF NOT EXISTS event_comments (
+    id BIGSERIAL PRIMARY KEY,
+    event_id BIGINT NOT NULL REFERENCES events (id) ON DELETE CASCADE,
+    author_telegram_id BIGINT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_comments_event ON event_comments (event_id, created_at);
+
+CREATE TABLE IF NOT EXISTS hackathon_teams (
+    id BIGSERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    starts_at TIMESTAMPTZ,
+    ends_at TIMESTAMPTZ,
+    max_members INT NOT NULL CHECK (max_members >= 2 AND max_members <= 30),
+    creator_telegram_id BIGINT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS hackathon_team_members (
+    team_id BIGINT NOT NULL REFERENCES hackathon_teams (id) ON DELETE CASCADE,
+    telegram_user_id BIGINT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member',
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (team_id, telegram_user_id)
+);
+
+CREATE TABLE IF NOT EXISTS hackathon_applications (
+    id BIGSERIAL PRIMARY KEY,
+    team_id BIGINT NOT NULL REFERENCES hackathon_teams (id) ON DELETE CASCADE,
+    applicant_telegram_id BIGINT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (team_id, applicant_telegram_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_hackathon_app_team_status
+    ON hackathon_applications (team_id, status);
 
 CREATE TABLE IF NOT EXISTS web_login_codes (
     id BIGSERIAL PRIMARY KEY,
@@ -74,6 +128,7 @@ CREATE TABLE IF NOT EXISTS member_profiles (
     bio TEXT,
     github_url TEXT NOT NULL DEFAULT 'https://github.com/',
     photo_paths JSONB NOT NULL DEFAULT '[]'::jsonb,
+    resume_path TEXT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

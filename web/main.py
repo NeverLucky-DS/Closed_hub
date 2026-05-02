@@ -15,9 +15,11 @@ def main() -> None:
             "Задайте WEB_SESSION_SECRET (или web_session_secret в .env) для веб-сервера."
         )
     port = int(os.environ.get("WEB_PORT", "8000"))
+    # 0.0.0.0 — доступ с телефона в той же Wi‑Fi сети; 127.0.0.1 — только с этого Mac.
+    host = (os.environ.get("WEB_HOST") or "0.0.0.0").strip() or "0.0.0.0"
     uvicorn.run(
         "web.app:app",
-        host="0.0.0.0",
+        host=host,
         port=port,
         proxy_headers=True,
         forwarded_allow_ips="*",

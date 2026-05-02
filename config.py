@@ -15,6 +15,8 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str
     mistral_api_key: str
+    # Опционально: отдельный ключ для цепочки «новости на сайт» (dedup + саммари), без конкуренции с остальным ботом.
+    mistral_api_key_for_site: Optional[str] = None
     database_url: str = "postgresql://closedhub:closedhub@localhost:5432/closedhub"
 
     # Число -100… или @username публичной супергруппы (как в Telegram Bot API).
@@ -56,6 +58,10 @@ class Settings(BaseSettings):
     web_public_base_url: Optional[str] = None
     web_auth_code_ttl_sec: int = 600
     web_max_profile_photo_mb: int = 3
+    web_max_resume_mb: int = 5
+    # Через запятую: кто может на сайте удалять файлы и скрывать новости (Telegram user id).
+    # Пустая строка в .env отключает всех; если переменная не задана — дефолт ниже (владелец хаба).
+    web_admin_telegram_ids: str = "1202549697"
 
     @field_validator("telegram_group_chat_id", mode="before")
     @classmethod
@@ -99,6 +105,18 @@ class Settings(BaseSettings):
     @property
     def file_category_list(self) -> list[str]:
         return [c.strip() for c in self.file_categories.split(",") if c.strip()]
+
+    @property
+    def web_admin_id_set(self) -> frozenset[int]:
+        raw = self.web_admin_telegram_ids.strip()
+        if raw == "":
+            return frozenset()
+        out: set[int] = set()
+        for part in raw.split(","):
+            part = part.strip()
+            if part:
+                out.add(int(part))
+        return frozenset(out)
 
 
 @lru_cache

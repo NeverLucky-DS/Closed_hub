@@ -18,6 +18,6 @@ async def route_intent(pool, text: str | None, has_document: bool, mime: str | N
     if not text or not str(text).strip():
         return "other"
     intent, conf = await llm.classify_intent(pool, str(text))
-    if conf < 0.35:
+    if conf < 0.28:
         return "other"
     return intent

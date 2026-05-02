@@ -12,6 +12,21 @@ INVITE_ALIASES = frozenset({BTN_INVITE, "Добавить участника"})
 # Приглашение
 BTN_CANCEL_INVITE = "Отменить"
 
+# Сбор контекста HR (обрабатывается только если открыт черновик awaiting_context)
+BTN_CANCEL_HR = "Отменить HR"
+HR_CANCEL_ALIASES = frozenset(
+    {
+        "отменить",
+        "отмена",
+        BTN_CANCEL_HR.lower(),
+        "отменить hr",
+        "отмена hr",
+        "отменить добавление hr",
+        "не добавлять hr",
+        "отменить добавление",
+    }
+)
+
 # Раздел «Собесы»
 BTN_READ_INTERVIEWS = "Читать по компаниям"
 BTN_SHARE_INTERVIEW = "Рассказать про собес"

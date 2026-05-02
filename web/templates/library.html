@@ -23,7 +23,7 @@
   <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
     {% for c in visible %}
     <a href="/library?cat={{ c.slug }}" class="card card-hover p-5 group block">
-      <div class="cover-bg {{ c.slug | event_cover }} rounded-xl h-24 mb-4 flex items-center justify-center text-white/95">
+      <div class="rounded-xl h-24 mb-4 flex items-center justify-center bg-ink-800/50 ring-1 ring-ink-600 text-accent">
         <span class="opacity-90">{{ icon.folder_lg() }}</span>
       </div>
       <div class="flex items-baseline justify-between gap-2">
@@ -38,7 +38,7 @@
   </div>
   {% else %}
   <div class="card p-10 text-center">
-    <div class="mx-auto w-12 h-12 rounded-xl cover-bg cover-2 flex items-center justify-center text-white">{{ icon.folder_lg() }}</div>
+    <div class="mx-auto w-12 h-12 rounded-xl bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-accent">{{ icon.folder_lg() }}</div>
     <p class="mt-4 text-ink-200">Пока нет ни одной темы с файлами.</p>
     <p class="mt-1 text-sm text-ink-300">Пришли документ боту — он предложит папку, и она появится здесь.</p>
   </div>
@@ -70,9 +70,9 @@
         {% for f in files %}
         {% set kind = f | file_kind %}
         {% set is_active = selected and selected.id == f.id %}
-        <li>
+        <li class="flex items-stretch border-b border-ink-600/60 hover:bg-ink-700/40 transition {{ 'bg-ink-700' if is_active else '' }}">
           <a href="/library?cat={{ category }}&file={{ f.id }}"
-             class="flex items-start gap-3 px-3 py-2.5 border-b border-ink-600/60 hover:bg-ink-700/60 transition {{ 'bg-ink-700' if is_active else '' }}">
+             class="flex items-start gap-3 px-3 py-2.5 flex-1 min-w-0">
             <span class="mt-0.5 text-ink-300">
               {% if kind == 'pdf' %}{{ icon.file_pdf() }}
               {% elif kind == 'image' %}{{ icon.file_image() }}
@@ -85,6 +85,10 @@
               </span>
             </span>
           </a>
+          {% if is_admin %}
+          <button type="button" class="admin-del-file flex-shrink-0 px-2.5 border-l border-ink-600/60 text-ink-400 hover:text-rose-300 hover:bg-ink-800/80 flex items-center justify-center"
+                  data-fid="{{ f.id }}" title="Удалить файл">{{ icon.trash() }}</button>
+          {% endif %}
         </li>
         {% endfor %}
         {% if not files %}
@@ -105,19 +109,27 @@
             {% if selected.mime_type %} · {{ selected.mime_type }}{% endif %}
           </div>
         </div>
-        <a class="btn" href="/api/library/{{ selected.id }}/raw" download>
-          {{ icon.download() }}<span>Скачать</span>
-        </a>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          {% if is_admin %}
+          <button type="button" class="btn text-xs text-rose-300/90 border border-rose-500/40 hover:bg-rose-500/10 admin-del-file flex items-center gap-1" data-fid="{{ selected.id }}" title="Удалить файл">{{ icon.trash() }}<span>Удалить</span></button>
+          {% endif %}
+          <a class="btn" href="/api/library/{{ selected.id }}/raw?dl=1">
+            {{ icon.download() }}<span>Скачать</span>
+          </a>
+        </div>
       </div>
+      <p class="px-4 py-2 text-xs text-ink-300 border-b border-ink-600/80">
+        Превью ниже — только просмотр в браузере. Файл сохранится на диск только по кнопке «Скачать».
+      </p>
       {% if kind == 'pdf' %}
         <iframe class="viewer-frame" src="/api/library/{{ selected.id }}/raw#toolbar=1&navpanes=0" title="PDF"></iframe>
       {% elif kind == 'image' %}
-        <img src="/api/library/{{ selected.id }}/raw" alt="">
+        <img src="/api/library/{{ selected.id }}/raw" alt="" loading="lazy">
       {% else %}
         <div class="flex flex-col items-center justify-center text-center px-6 py-16 gap-3 flex-1">
           <span class="text-accent">{{ icon.file_text() }}</span>
           <p class="text-ink-200">Превью недоступно для этого типа файла.</p>
-          <a class="btn btn-primary" href="/api/library/{{ selected.id }}/raw" download>
+          <a class="btn btn-primary" href="/api/library/{{ selected.id }}/raw?dl=1">
             {{ icon.download() }}<span>Скачать</span>
           </a>
         </div>
@@ -130,5 +142,27 @@
       {% endif %}
     </section>
   </div>
+{% endif %}
+{% endblock %}
+{% block extra_scripts %}
+{% if is_admin and view == 'files' %}
+<script>
+(function () {
+  document.querySelectorAll(".admin-del-file").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var id = btn.getAttribute("data-fid");
+      if (!id || !confirm("Удалить файл из библиотеки? Действие необратимо.")) return;
+      fetch("/api/library/" + id, { method: "DELETE", credentials: "same-origin" })
+        .then(function (r) {
+          if (r.ok) {
+            var u = new URL(location.href);
+            u.searchParams.delete("file");
+            location.href = u.toString();
+          } else alert("Не удалось удалить");
+        });
+    });
+  });
+})();
+</script>
 {% endif %}
 {% endblock %}

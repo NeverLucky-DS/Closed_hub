@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% block main %}
+<a href="/hackathons" class="inline-flex items-center gap-1 text-sm text-ink-300 hover:text-ink-100 mb-5">
+  <span class="rotate-180">{{ icon.chevron_right() }}</span> Все команды
+</a>
+
+{% if toast == 'ok' %}
+<div class="mb-4 rounded-xl border border-ink-600 bg-ink-800/80 px-4 py-3 text-sm text-ink-200">Заявка отправлена. Капитан увидит её ниже.</div>
+{% elif toast == 'full' %}
+<div class="mb-4 rounded-xl border border-ink-600 bg-ink-800/80 px-4 py-3 text-sm text-ink-200">В команде нет свободных мест.</div>
+{% elif toast == 'closed' %}
+<div class="mb-4 rounded-xl border border-ink-600 bg-ink-800/80 px-4 py-3 text-sm text-ink-200">Набор в эту команду закрыт.</div>
+{% elif toast == 'already_member' %}
+<div class="mb-4 rounded-xl border border-ink-600 bg-ink-800/80 px-4 py-3 text-sm text-ink-200">Ты уже в составе.</div>
+{% elif toast == 'already_pending' %}
+<div class="mb-4 rounded-xl border border-ink-600 bg-ink-800/80 px-4 py-3 text-sm text-ink-200">Заявка уже на рассмотрении.</div>
+{% elif toast == 'accepted_ok' %}
+<div class="mb-4 rounded-xl border border-ink-600 bg-ink-800/80 px-4 py-3 text-sm text-ink-200">Участник принят в команду.</div>
+{% elif toast == 'rejected_ok' %}
+<div class="mb-4 rounded-xl border border-ink-600 bg-ink-800/80 px-4 py-3 text-sm text-ink-200">Заявка отклонена.</div>
+{% elif toast in ('forbidden', 'not_pending', 'missing') %}
+<div class="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90">Действие не выполнено. Проверь права или обнови страницу.</div>
+{% elif toast %}
+<div class="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90">{{ toast }}</div>
+{% endif %}
+
+<section class="card p-6 md:p-8 max-w-3xl">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink-100">{{ team.title }}</h1>
+  {% if team.description %}
+  <div class="mt-4 text-ink-200 whitespace-pre-wrap leading-relaxed">{{ team.description }}</div>
+  {% endif %}
+  <div class="mt-4 text-sm text-ink-300 num">
+    {% if team.starts_at %}С {{ team.starts_at | dt_short }}{% else %}Дата начала не указана{% endif %}
+    {% if team.ends_at %} — до {{ team.ends_at | dt_short }}{% endif %}
+  </div>
+
+  <h2 class="mt-8 text-xs uppercase tracking-[0.15em] text-ink-400">Места в команде</h2>
+  <div class="mt-3 flex flex-wrap items-center gap-2">
+    {% set mx = team.max_members %}
+    {% for i in range(mx) %}
+      {% if i < members|length %}
+        {% set m = members[i] %}
+        {% set photos = m.photo_paths | valid_photos %}
+        <a href="/people/{{ m.telegram_user_id }}" class="flex flex-col items-center gap-1 w-14" title="{{ m.display_name or m.telegram_user_id }}">
+          {% if photos and photos[0] %}
+          <img src="/media/profile/{{ m.telegram_user_id }}/{{ photos[0].split('/')[-1] }}" alt="" class="w-11 h-11 rounded-full object-cover ring-1 ring-ink-600">
+          {% else %}
+          <span class="w-11 h-11 rounded-full bg-ink-600 ring-1 ring-ink-500 flex items-center justify-center text-sm font-medium text-ink-100">
+            {{ m.display_name | initial(m.telegram_user_id) }}
+          </span>
+          {% endif %}
+          <span class="text-[10px] text-ink-400 truncate max-w-full">{{ 'капитан' if m.role == 'creator' else 'участник' }}</span>
+        </a>
+      {% else %}
+        <div class="flex flex-col items-center gap-1 w-14" title="Свободное место">
+          <div class="w-11 h-11 rounded-full border-2 border-dashed border-ink-500 bg-ink-800/30"></div>
+          <span class="text-[10px] text-ink-500">пусто</span>
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  {% set filled = team.member_count or 0 %}
+  {% if filled < mx and team.status == 'open' and not is_member and uid != team.creator_telegram_id %}
+  <form method="post" action="/hackathons/{{ team.id }}/apply" class="mt-6">
+    <button type="submit" class="btn btn-primary">Подать заявку</button>
+  </form>
+  {% elif app_row and app_row.status == 'pending' and not is_member %}
+  <p class="mt-6 text-sm text-ink-300">Заявка на рассмотрении у капитана.</p>
+  {% elif is_member %}
+  <p class="mt-6 text-sm text-accent">Ты в этой команде.</p>
+  {% elif uid == team.creator_telegram_id %}
+  <p class="mt-6 text-sm text-ink-300">Ты капитан этой команды.</p>
+  {% endif %}
+</section>
+
+{% if uid == team.creator_telegram_id and pending %}
+<section class="card p-6 max-w-3xl mt-6">
+  <h2 class="text-sm font-semibold text-ink-100">Заявки</h2>
+  <ul class="mt-4 space-y-4">
+    {% for a in pending %}
+    {% set aph = a.photo_paths | valid_photos %}
+    <li class="flex flex-wrap items-center gap-4 border-b border-ink-600/80 pb-4 last:border-0">
+      <a href="/people/{{ a.applicant_telegram_id }}" class="flex items-center gap-3 min-w-0 flex-1">
+        {% if aph and aph[0] %}
+        <img src="/media/profile/{{ a.applicant_telegram_id }}/{{ aph[0].split('/')[-1] }}" alt="" class="w-12 h-12 rounded-full object-cover ring-1 ring-ink-600">
+        {% else %}
+        <span class="w-12 h-12 rounded-full bg-ink-600 flex items-center justify-center font-medium">{{ a.display_name | initial(a.applicant_telegram_id) }}</span>
+        {% endif %}
+        <div class="min-w-0">
+          <div class="font-medium text-ink-100 truncate">{{ a.display_name or ('Участник ' ~ a.applicant_telegram_id) }}</div>
+          <div class="text-xs text-ink-400">Профиль · заявка {{ a.created_at | dt_short }}</div>
+        </div>
+      </a>
+      <div class="flex gap-2">
+        <form method="post" action="/hackathons/{{ team.id }}/applications/{{ a.id }}/accept">
+          <button type="submit" class="btn btn-primary text-sm">Принять</button>
+        </form>
+        <form method="post" action="/hackathons/{{ team.id }}/applications/{{ a.id }}/reject">
+          <button type="submit" class="btn text-sm border border-ink-600">Отклонить</button>
+        </form>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

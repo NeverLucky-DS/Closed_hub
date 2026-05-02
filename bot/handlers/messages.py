@@ -4,7 +4,7 @@ import logging
 import re
 import time
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageOriginUser, Update
 from telegram.error import Forbidden, TelegramError
 from telegram.ext import ContextTypes
 
@@ -17,7 +17,7 @@ from bot.keyboards import (
     main_menu,
 )
 from db import repo
-from services import events_service, files_service, hr_service, interview_service, ml_forward_service, routing
+from services import events_service, files_service, hr_service, interview_service, llm, ml_forward_service, routing
 from services import interviews_store
 from utils.telegram_user import user_display_handle
 from utils.text_slug import slugify_folder
@@ -28,15 +28,20 @@ _INVITE_UID = re.compile(r"^\s*(\d{6,15})\s*$")
 _USERNAME_INVITE = re.compile(r"^\s*@([a-zA-Z][a-zA-Z0-9_]{4,31})\s*$")
 
 
-def _message_exits_invite_only_mode(msg: Message) -> bool:
-    return bool(
-        msg.document
-        or msg.forward_origin
-        or msg.photo
-        or msg.video
-        or msg.audio
-        or msg.video_note
-    )
+def _invitee_id_from_forward(msg: Message) -> int | None:
+    o = msg.forward_origin
+    if o is None:
+        return None
+    if isinstance(o, MessageOriginUser):
+        try:
+            return int(o.sender_user.id)
+        except (TypeError, AttributeError, ValueError):
+            return None
+    return None
+
+
+def _is_hr_context_cancel(text: str) -> bool:
+    return (text or "").strip().lower() in N.HR_CANCEL_ALIASES
 
 
 async def _help_reply(message: Message, is_whitelist: bool) -> None:
@@ -47,8 +52,8 @@ async def _help_reply(message: Message, is_whitelist: bool) -> None:
         "— Лента хаба\n"
         "Перешли сюда сообщение (в разумных пределах по давности) — оно попадёт в общую ленту, "
         "начислятся очки. Что публиковать, решаешь ты; итоги очков дублируются в теме «Рейтинг».\n\n"
-        "— Мероприятия\n"
-        "Напиши текст анонса своими словами — проверю на дубли и при необходимости отправлю в тему новостей.\n\n"
+        "— Новости (анонсы)\n"
+        "Напиши текст анонса своими словами — проверю на дубли и при необходимости отправлю в тему новостей; на сайте это попадёт в ленту.\n\n"
         "— Файлы\n"
         "Пришли документ, например PDF — предложу папку в библиотеке. Список и скачивание: команда /files\n\n"
         "— Голосовые\n"
@@ -59,8 +64,8 @@ async def _help_reply(message: Message, is_whitelist: bool) -> None:
     if is_whitelist:
         text += (
             f"\n\n— Приглашения\n"
-            f"Кнопка «{N.BTN_INVITE}»: нужен @username человека или его числовой Telegram ID "
-            "(пересылка сообщений для приглашения не используется)."
+            f"Кнопка «{N.BTN_INVITE}»: перешли любое сообщение от человека или пришли @username / числовой Telegram ID. "
+            f"«{N.BTN_CANCEL_INVITE}» — выйти без приглашения."
         )
     await message.reply_text(text, reply_markup=main_menu(is_whitelist))
 
@@ -80,7 +85,7 @@ async def _route_after_inbound(
     if hr_token and not has_doc:
         await repo.abandon_awaiting_hr_drafts(pool, uid)
         _hr_id, reply = await hr_service.start_hr_contact_ref_flow(pool, uid, hr_token)
-        await msg.reply_text(reply)
+        await msg.reply_text(reply, reply_markup=hr_service.hr_draft_cancel_keyboard(_hr_id))
         return
 
     draft = await repo.get_open_hr_draft_for_user(pool, uid)
@@ -88,6 +93,14 @@ async def _route_after_inbound(
         draft = None
 
     if draft and user_text and not has_doc:
+        if _is_hr_context_cancel(tr):
+            await hr_service.cancel_hr_gathering(context.application, pool, uid)
+            wl_user = await repo.is_whitelist(pool, uid)
+            await msg.reply_text(
+                "Ок, добавление HR отменено.",
+                reply_markup=main_menu(wl_user),
+            )
+            return
         await hr_service.append_hr_context_and_schedule(
             context.application,
             pool,
@@ -140,13 +153,49 @@ async def _route_after_inbound(
         if not user_text:
             await msg.reply_text("Пришли текст анонса или пересланное сообщение.")
             return
+        assess = await llm.assess_event_clarity(pool, user_text)
+        if not assess.get("clear_enough"):
+            hint = (assess.get("hint_ru") or "").strip() or (
+                "По тексту неочевидно, что именно анонсируешь — добавь деталей или даты."
+            )
+            bucket = context.application.bot_data.setdefault("event_publish_anyway", {})
+            now = time.time()
+            for k, v in list(bucket.items()):
+                if now > float(v.get("expires", 0)):
+                    bucket.pop(k, None)
+            bucket[f"{uid}:{msg.message_id}"] = {"raw": user_text, "expires": now + 600.0}
+            kb = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "Всё равно опубликовать",
+                            callback_data=f"eva:{msg.message_id}",
+                        ),
+                        InlineKeyboardButton("Отмена", callback_data=f"evc:{msg.message_id}"),
+                    ]
+                ]
+            )
+            await msg.reply_text(
+                f"{hint}\n\nМожно дополнить и отправить снова, или опубликовать как есть — кнопки ниже.",
+                reply_markup=kb,
+            )
+            return
+        log.info(
+            "inbound event pipeline uid=%s mid=%s text_len=%s forward=%s",
+            uid,
+            msg.message_id,
+            len(user_text or ""),
+            bool(msg.forward_origin),
+        )
         try:
             reply = await events_service.handle_event_message(
                 pool,
                 context.bot,
+                context.application,
                 source_user_id=uid,
                 raw_text=user_text,
                 announcer_label=user_display_handle(msg.from_user) if msg.from_user else str(uid),
+                source_message=msg,
             )
         except Exception:
             log.exception("event pipeline")
@@ -205,9 +254,10 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await repo.set_session(pool, uid, "awaiting_invite", {})
         await msg.reply_text(
             "Кого добавить в хаб?\n\n"
-            "Одним сообщением пришли @username (например @ivan) или числовой Telegram ID.\n\n"
-            "Пересланные сообщения для приглашения не подходят — они обрабатываются как обычный контент. "
-            f"Вернуться без приглашения — «{N.BTN_CANCEL_INVITE}».",
+            "• Перешли сюда сообщение от этого человека (из личного или группового чата), или\n"
+            "• одним сообщением пришли @username (например @ivan) или числовой Telegram ID.\n\n"
+            "Пока открыт этот шаг, пересылки не уйдут в ленту хаба.\n"
+            f"Выйти без приглашения — кнопка «{N.BTN_CANCEL_INVITE}» или «{N.BTN_GUIDE}».",
             reply_markup=invite_flow_keyboard(),
         )
         return
@@ -218,60 +268,102 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await msg.reply_text("Ок, приглашение отменено.", reply_markup=main_menu(True))
             return
 
-        if _message_exits_invite_only_mode(msg):
+        if msg.forward_origin:
+            invitee_id = _invitee_id_from_forward(msg)
+            if invitee_id is None:
+                await msg.reply_text(
+                    "Из пересылки не видно профиль пользователя (часто так у «скрытого» имени). "
+                    "Пришли @username или числовой Telegram ID.",
+                    reply_markup=invite_flow_keyboard(),
+                )
+                return
+            if invitee_id == uid:
+                await msg.reply_text(
+                    "Это ты сам — укажи другого человека.",
+                    reply_markup=invite_flow_keyboard(),
+                )
+                return
+            await repo.add_or_activate_member(pool, invitee_id, uid)
             await repo.clear_session(pool, uid)
-            state, payload = "idle", {}
-        else:
-            invitee_id: int | None = None
-            uname_m = _USERNAME_INVITE.match(text_raw)
-            if uname_m:
-                handle = f"@{uname_m.group(1)}"
-                try:
-                    chat = await context.bot.get_chat(handle)
-                    if getattr(chat, "type", None) != "private":
-                        await msg.reply_text(
-                            "Это не личный профиль пользователя. Пришли @ник человека или числовой ID.",
-                            reply_markup=invite_flow_keyboard(),
-                        )
-                        return
-                    invitee_id = chat.id
-                except TelegramError as e:
-                    log.info("invite get_chat %s failed: %s", handle, e)
+            await msg.reply_text(
+                f"Пользователь {invitee_id} активирован.",
+                reply_markup=main_menu(True),
+            )
+            try:
+                await context.bot.send_message(
+                    chat_id=invitee_id,
+                    text="Тебя добавили в закрытый бот. Открой чат с ботом и нажми /start.",
+                )
+            except Forbidden:
+                await msg.reply_text(
+                    "Пользователь добавлен в базу, но я не могу написать ему первым: "
+                    "пусть сам откроет бота и нажмёт /start."
+                )
+            except Exception:
+                log.warning("notify invitee failed", exc_info=True)
+            return
+
+        if msg.document or msg.photo or msg.video or msg.audio or msg.video_note:
+            await msg.reply_text(
+                "Для приглашения нужна пересылка сообщения от человека или текстом @username / ID. "
+                "Фото и файлы сюда не подходят.",
+                reply_markup=invite_flow_keyboard(),
+            )
+            return
+
+        invitee_id = None
+        uname_m = _USERNAME_INVITE.match(text_raw)
+        if uname_m:
+            handle = f"@{uname_m.group(1)}"
+            try:
+                chat = await context.bot.get_chat(handle)
+                if getattr(chat, "type", None) != "private":
                     await msg.reply_text(
-                        "Не нашёл пользователя с таким @ником. Проверь написание. "
-                        "Если у человека нет публичного username — нужен числовой Telegram ID. "
-                        "Иногда помогает, если человек один раз открыл этого бота.",
+                        "Это не личный профиль пользователя. Пришли @ник человека или числовой ID.",
                         reply_markup=invite_flow_keyboard(),
                     )
                     return
-
-            uid_m = _INVITE_UID.match(text_raw)
-            if invitee_id is None and uid_m:
-                invitee_id = int(uid_m.group(1))
-
-            if invitee_id is not None:
-                await repo.add_or_activate_member(pool, invitee_id, uid)
-                await repo.clear_session(pool, uid)
+                invitee_id = chat.id
+            except TelegramError as e:
+                log.info("invite get_chat %s failed: %s", handle, e)
                 await msg.reply_text(
-                    f"Пользователь {invitee_id} активирован.",
-                    reply_markup=main_menu(True),
+                    "Не нашёл пользователя с таким @ником. Проверь написание. "
+                    "Если у человека нет публичного username — нужен числовой Telegram ID. "
+                    "Иногда помогает, если человек один раз открыл этого бота.",
+                    reply_markup=invite_flow_keyboard(),
                 )
-                try:
-                    await context.bot.send_message(
-                        chat_id=invitee_id,
-                        text="Тебя добавили в закрытый бот. Открой чат с ботом и нажми /start.",
-                    )
-                except Forbidden:
-                    await msg.reply_text(
-                        "Пользователь добавлен в базу, но я не могу написать ему первым: "
-                        "пусть сам откроет бота и нажмёт /start."
-                    )
-                except Exception:
-                    log.warning("notify invitee failed", exc_info=True)
                 return
 
+        uid_m = _INVITE_UID.match(text_raw)
+        if invitee_id is None and uid_m:
+            invitee_id = int(uid_m.group(1))
+
+        if invitee_id is not None:
+            await repo.add_or_activate_member(pool, invitee_id, uid)
             await repo.clear_session(pool, uid)
-            state, payload = "idle", {}
+            await msg.reply_text(
+                f"Пользователь {invitee_id} активирован.",
+                reply_markup=main_menu(True),
+            )
+            try:
+                await context.bot.send_message(
+                    chat_id=invitee_id,
+                    text="Тебя добавили в закрытый бот. Открой чат с ботом и нажми /start.",
+                )
+            except Forbidden:
+                await msg.reply_text(
+                    "Пользователь добавлен в базу, но я не могу написать ему первым: "
+                    "пусть сам откроет бота и нажмёт /start."
+                )
+            except Exception:
+                log.warning("notify invitee failed", exc_info=True)
+            return
+
+        await msg.reply_text(
+            "Не понял, кого пригласить. Перешли сообщение от человека или пришли @username / числовой ID.",
+            reply_markup=invite_flow_keyboard(),
+        )
+        return
 
     st = await repo.member_status(pool, uid)
     if st != "active":
@@ -283,6 +375,13 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if await ml_forward_service.user_context_allows_hub_forward(pool, uid, state):
         if await ml_forward_service.try_handle_forward(msg, context, pool, uid):
+            log.info(
+                "inbound handled by ml_forward uid=%s chat=%s mid=%s forward=%s",
+                uid,
+                chat_id,
+                msg.message_id,
+                bool(msg.forward_origin),
+            )
             return
 
     pending_hr = await repo.get_hr_pending_confirm_for_user(pool, uid)
@@ -433,7 +532,10 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             )
             await repo.clear_session(pool, uid)
             if ok:
-                await msg.reply_text(f"Файл сохранён в папке «{label}» (код {slug}).")
+                await msg.reply_text(
+                    f"Файл сохранён в папке «{label}».\n"
+                    f"Технический ярлык папки: {slug}"
+                )
             else:
                 await msg.reply_text("Не удалось: нет файла или чужая запись.")
         return

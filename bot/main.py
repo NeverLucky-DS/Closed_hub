@@ -12,6 +12,7 @@ from config import get_settings
 from db.pool import close_pool, create_pool
 from db.repo import seed_whitelist_and_members
 from db.schema_patch import apply_pending_patches
+from services.event_summary_worker import start_event_summary_worker, stop_event_summary_worker
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,10 +38,12 @@ async def post_init(application: Application) -> None:
     application.bot_data["pool"] = pool
     await apply_pending_patches(pool)
     await seed_whitelist_and_members(pool, settings.whitelist_seed_ids)
-    log.info("DB ready (migrations + whitelist seed)")
+    start_event_summary_worker(application)
+    log.info("DB ready (migrations + whitelist seed + event summary queue)")
 
 
 async def post_shutdown(application: Application) -> None:
+    await stop_event_summary_worker(application)
     pool = application.bot_data.get("pool")
     if pool:
         await close_pool(pool)

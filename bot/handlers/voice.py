@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes
 
 from utils import nav_labels as N
 from bot.handlers.messages import _route_after_inbound
-from bot.keyboards import interview_hub_keyboard, interview_tell_keyboard
+from bot.keyboards import interview_hub_keyboard, interview_tell_keyboard, invite_flow_keyboard
 from config import get_settings
 from db import repo
 from services import groq_voice, llm, ml_forward_service
@@ -26,7 +26,11 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     state, _ = await repo.get_session(pool, uid)
     if state == "awaiting_invite":
-        await repo.clear_session(pool, uid)
+        await msg.reply_text(
+            "В режиме приглашения голосовые не подходят. Перешли сообщение от человека или пришли @username / ID.",
+            reply_markup=invite_flow_keyboard(),
+        )
+        return
 
     session_state, _ = await repo.get_session(pool, uid)
 

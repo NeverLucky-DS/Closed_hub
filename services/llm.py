@@ -16,6 +16,15 @@ def _load_prompt(name: str) -> str:
     return (PROMPTS_DIR / name).read_text(encoding="utf-8")
 
 
+def _mistral_bearer(*, prefer_site_key: bool) -> str:
+    settings = get_settings()
+    if prefer_site_key:
+        alt = (settings.mistral_api_key_for_site or "").strip()
+        if alt:
+            return alt
+    return settings.mistral_api_key
+
+
 async def mistral_chat(
     pool,
     *,
@@ -24,8 +33,10 @@ async def mistral_chat(
     system: str,
     user: str,
     json_mode: bool = False,
+    prefer_site_key: bool = False,
 ) -> tuple[str, int | None, int | None]:
     settings = get_settings()
+    api_key = _mistral_bearer(prefer_site_key=prefer_site_key)
     url = "https://api.mistral.ai/v1/chat/completions"
     body: dict = {
         "model": model,
@@ -42,7 +53,7 @@ async def mistral_chat(
     async with httpx.AsyncClient(timeout=120.0) as client:
         r = await client.post(
             url,
-            headers={"Authorization": f"Bearer {settings.mistral_api_key}", "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json=body,
         )
         r.raise_for_status()
@@ -55,6 +66,34 @@ async def mistral_chat(
     content = data["choices"][0]["message"]["content"]
     await repo.log_llm_call(pool, purpose, model, pt, ct, latency_ms)
     return content, pt, ct
+
+
+async def assess_event_clarity(pool, user_text: str) -> dict:
+    """Оценка, достаточно ли ясен текст анонса. При сбое ИИ — считаем, что можно публиковать."""
+    settings = get_settings()
+    raw_t = (user_text or "").strip()
+    if len(raw_t) < 8:
+        return {
+            "clear_enough": False,
+            "hint_ru": "Сообщение очень короткое — добавь, что именно анонсируешь (и даты/ссылку, если есть).",
+        }
+    template = _load_prompt("event_clarity.txt")
+    user_block = template.replace("{user_text}", raw_t[:8000])
+    try:
+        raw, _, _ = await mistral_chat(
+            pool,
+            purpose="event_clarity",
+            model=settings.mistral_model_routing,
+            system="Reply with JSON only.",
+            user=user_block,
+            json_mode=True,
+        )
+        data = json.loads(raw)
+        ce = bool(data.get("clear_enough", True))
+        hint = str(data.get("hint_ru") or "").strip()
+        return {"clear_enough": ce, "hint_ru": hint}
+    except Exception:
+        return {"clear_enough": True, "hint_ru": ""}
 
 
 async def classify_intent(pool, user_text: str) -> tuple[str, float]:
@@ -89,6 +128,7 @@ async def summarize_event(pool, raw_text: str) -> dict:
         system="Reply with JSON only.",
         user=user_block,
         json_mode=True,
+        prefer_site_key=True,
     )
     return json.loads(raw)
 
@@ -105,6 +145,7 @@ async def dedup_event(pool, new_text: str, existing_texts: list[str]) -> dict:
         system="Reply with JSON only.",
         user=user_block,
         json_mode=True,
+        prefer_site_key=True,
     )
     return json.loads(raw)
 

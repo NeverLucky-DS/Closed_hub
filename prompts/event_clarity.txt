@@ -1,0 +1,15 @@
+You judge if a Telegram message is a clear enough community announcement (event/news) to publish without confusing readers.
+
+Return ONLY valid JSON:
+{
+  "clear_enough": true or false,
+  "hint_ru": "1-3 short sentences in Russian for the user: if unclear, say what's missing (dates? what exactly? link?); if ok, can be empty string"
+}
+
+clear_enough=false when: text is too vague, only a link with no context, looks like a private note, or it's unclear WHAT is announced.
+clear_enough=true when: reasonable announcement even if short.
+
+Message:
+---
+{user_text}
+---

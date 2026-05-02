@@ -5,20 +5,18 @@
   <span class="rotate-180">{{ icon.chevron_right() }}</span> К списку
 </a>
 
-{% set photos = p.photo_paths or [] %}
-<section class="card overflow-hidden">
-  <div class="cover-bg {{ pid | avatar_cls }} h-32 md:h-40"></div>
-  <div class="px-5 md:px-8 pb-7 -mt-12 md:-mt-14">
-    <div class="flex flex-col md:flex-row md:items-end md:gap-6">
+{% set photos = p.photo_paths | valid_photos %}
+<section class="card p-6 md:p-8">
+  <div class="flex flex-col sm:flex-row sm:items-start gap-5 sm:gap-8">
       {% if photos and photos[0] %}
       <img src="/media/profile/{{ pid }}/{{ photos[0].split('/')[-1] }}"
-           alt="" class="w-24 h-24 md:w-28 md:h-28 rounded-2xl object-cover ring-4 ring-ink-800 shadow-soft">
+           alt="" class="w-24 h-24 md:w-28 md:h-28 rounded-2xl object-cover ring-1 ring-ink-600 shadow-soft flex-shrink-0">
       {% else %}
-      <span class="w-24 h-24 md:w-28 md:h-28 rounded-2xl ring-4 ring-ink-800 cover-bg {{ pid | avatar_cls }} flex items-center justify-center text-white text-3xl font-semibold shadow-soft">
+      <span class="w-24 h-24 md:w-28 md:h-28 rounded-2xl ring-1 ring-ink-600 bg-ink-700 flex items-center justify-center text-ink-100 text-3xl font-semibold shadow-soft flex-shrink-0">
         {{ p.display_name | initial(pid) }}
       </span>
       {% endif %}
-      <div class="mt-4 md:mt-0 md:pb-2 min-w-0 flex-1">
+      <div class="min-w-0 flex-1">
         <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">
           {{ p.display_name or ('Участник ' ~ pid) }}
         </h1>
@@ -27,23 +25,34 @@
           {{ icon.github() }}
           <span class="truncate">{{ p.github_url.replace('https://github.com/', '') }}</span>
         </a>
+        {% if p.resume_path %}
+        <div class="mt-3">
+          <a href="/api/profile/{{ pid }}/resume" class="btn btn-primary text-sm">
+            {{ icon.file_text() }}<span>Скачать резюме (PDF)</span>
+          </a>
+        </div>
+        {% endif %}
+        <div class="mt-4 flex flex-wrap gap-2">
+          <a href="tg://user?id={{ pid }}" class="btn text-sm border border-ink-600 bg-ink-800/60 hover:bg-ink-700">
+            Написать в Telegram
+          </a>
+        </div>
       </div>
-    </div>
-
-    {% if p.bio %}
-    <div class="mt-6 max-w-2xl text-ink-200 leading-relaxed whitespace-pre-wrap">{{ p.bio }}</div>
-    {% endif %}
   </div>
+
+  {% if p.bio %}
+  <div class="mt-6 max-w-2xl text-ink-200 leading-relaxed whitespace-pre-wrap border-t border-ink-600 pt-6">{{ p.bio }}</div>
+  {% endif %}
 </section>
 
-{% if photos and photos|length > 1 %}
+{% if photos | length > 1 %}
 <section class="mt-6">
   <h2 class="text-sm uppercase tracking-[0.18em] text-ink-300 mb-3">Галерея</h2>
   <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-    {% for rel in photos %}
-    <a href="/media/profile/{{ pid }}/{{ rel.split('/')[-1] }}" target="_blank" class="block">
+    {% for rel in photos[1:] %}
+    <a href="/media/profile/{{ pid }}/{{ rel.split('/')[-1] }}" target="_blank" rel="noopener" class="block">
       <img src="/media/profile/{{ pid }}/{{ rel.split('/')[-1] }}"
-           alt="" class="rounded-xl border border-ink-600 object-cover w-full h-44 hover:opacity-90 transition">
+           alt="" loading="lazy" class="rounded-xl border border-ink-600 object-cover w-full h-44 hover:opacity-90 transition">
     </a>
     {% endfor %}
   </div>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import secrets
 import time
@@ -11,8 +12,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+import mimetypes
+from datetime import date, datetime, timezone
+from datetime import time as dt_time
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel, Field
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.templating import Jinja2Templates
@@ -30,6 +35,8 @@ _static_dir = Path(__file__).resolve().parent / "static"
 
 _auth_rl: dict[str, float] = {}
 _RL_WINDOW_SEC = 55.0
+
+_REACTION_EMOJIS = ("👍", "❤️", "🔥", "🤔", "🎉")
 
 
 def _rl_allow(key: str) -> bool:
@@ -55,6 +62,9 @@ def _event_header(rec: Any) -> str:
     if t and str(t).strip():
         return str(t).strip()
     raw = (rec.get("raw_text") or "").strip()
+    for mark in ("[пересланное сообщение]", "[переслано]"):
+        if raw.startswith(mark):
+            raw = raw[len(mark) :].lstrip()
     line = raw.split("\n", 1)[0].strip()
     return (line[:120] + "…") if len(line) > 120 else line
 
@@ -75,12 +85,6 @@ def _event_summary(rec: Any) -> str:
     return (head[:cut] if cut > 100 else head).rstrip(",.;:- ") + "…"
 
 
-def _event_cover_class(title: str | None) -> str:
-    base = (title or "").strip() or "?"
-    h = hashlib.md5(base.encode("utf-8")).digest()[0]
-    return f"cover-{(h % 6) + 1}"
-
-
 def _file_kind(mime: str | None, name: str | None) -> str:
     m = (mime or "").lower()
     n = (name or "").lower()
@@ -98,11 +102,6 @@ def _initial_for(name: str | None, fallback: str | int | None = None) -> str:
     return str(fallback)[0].upper() if fallback else "?"
 
 
-def _avatar_class(seed: str | int) -> str:
-    h = hashlib.md5(str(seed).encode("utf-8")).digest()[0]
-    return f"cover-{(h % 6) + 1}"
-
-
 def _format_dt_short(dt) -> str:
     if not dt:
         return ""
@@ -110,6 +109,90 @@ def _format_dt_short(dt) -> str:
         return dt.strftime("%d.%m %H:%M")
     except Exception:
         return ""
+
+
+def _format_dt_rel(dt) -> str:
+    if not dt:
+        return ""
+    try:
+        now = datetime.now(timezone.utc)
+        d = dt
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+        sec = (now - d).total_seconds()
+        if sec < 45:
+            return "только что"
+        if sec < 3600:
+            m = int(sec // 60)
+            return f"{m} мин назад"
+        if sec < 86400:
+            h = int(sec // 3600)
+            return f"{h} ч назад"
+        days = int(sec // 86400)
+        if days == 1:
+            return "вчера"
+        return f"{days} дн. назад"
+    except Exception:
+        return ""
+
+
+_NEWS_PLACEHOLDER_DIR = _static_dir / "news-placeholders"
+_NEWS_PLACEHOLDER_NAMES = tuple(f"placeholder-{i}" for i in range(1, 6))
+
+
+def _safe_event_cover_disk_path(rel: str | None) -> Path | None:
+    if not rel or not str(rel).strip():
+        return None
+    part = str(rel).strip().replace("\\", "/")
+    if ".." in part or part.startswith("/"):
+        return None
+    root = Path(get_settings().file_storage_path).resolve()
+    full = (root / part).resolve()
+    if not str(full).startswith(str(root)):
+        return None
+    if not full.is_file():
+        return None
+    return full
+
+
+def _event_thumb_url(rec: Any) -> str:
+    eid = int(rec["id"])
+    cover = rec.get("cover_image_path")
+    disk = _safe_event_cover_disk_path(cover)
+    if disk is not None:
+        return f"/api/events/{eid}/cover"
+    idx = (eid % 5) + 1
+    base = _NEWS_PLACEHOLDER_NAMES[idx - 1]
+    for ext in (".webp", ".jpg", ".jpeg", ".png"):
+        f = _NEWS_PLACEHOLDER_DIR / f"{base}{ext}"
+        if f.is_file():
+            return f"/static/news-placeholders/{base}{ext}"
+    return ""
+
+
+def _valid_photo_paths(raw: Any) -> list[str]:
+    """Нормализует photo_paths из JSONB: только непустые пути вида uid/file.ext (без ..)."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s or s == "[]":
+            return []
+        try:
+            raw = json.loads(s)
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for p in raw:
+        part = str(p).strip().replace("\\", "/")
+        if not part or part in seen or ".." in part or "/" not in part:
+            continue
+        seen.add(part)
+        out.append(part)
+    return out[:5]
 
 
 def _ru_plural(n: int, forms: tuple[str, str, str]) -> str:
@@ -158,13 +241,31 @@ def _events_metrics(events: list[Any]) -> dict:
 _templates.env.globals["icons_path"] = "_icons.html"
 _templates.env.filters["event_header"] = _event_header
 _templates.env.filters["event_summary"] = _event_summary
-_templates.env.filters["event_cover"] = _event_cover_class
 _templates.env.filters["file_kind"] = lambda r: _file_kind(r.get("mime_type"), r.get("original_filename"))
 _templates.env.filters["initial"] = _initial_for
-_templates.env.filters["avatar_cls"] = _avatar_class
 _templates.env.filters["dt_short"] = _format_dt_short
+_templates.env.filters["dt_rel"] = _format_dt_rel
+_templates.env.filters["event_thumb"] = _event_thumb_url
 _templates.env.filters["ru_plural"] = _ru_plural
 _templates.env.filters["event_badges"] = _event_badges
+_templates.env.filters["valid_photos"] = _valid_photo_paths
+_templates.env.globals["hub_settings"] = get_settings()
+
+
+class EventEndsAtBody(BaseModel):
+    ends_at: str = Field(..., min_length=10, max_length=32)
+
+
+class EventReactBody(BaseModel):
+    emoji: str = ""
+
+
+def _no_store_headers() -> dict[str, str]:
+    return {
+        "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
 
 
 async def _send_telegram_code(chat_id: int, code: str) -> None:
@@ -185,6 +286,19 @@ async def _send_telegram_code(chat_id: int, code: str) -> None:
                 status_code=502,
                 detail="Не удалось отправить код в Telegram. Откройте бота и нажмите /start.",
             )
+
+
+async def _telegram_try_delete_message(chat_id: int | str, message_id: int) -> bool:
+    settings = get_settings()
+    token = settings.telegram_bot_token
+    url = f"https://api.telegram.org/bot{token}/deleteMessage"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.post(url, json={"chat_id": chat_id, "message_id": message_id})
+        data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+        if r.is_success and data.get("ok", False):
+            return True
+        log.warning("telegram deleteMessage failed: %s", data.get("description", r.text[:200]))
+        return False
 
 
 @asynccontextmanager
@@ -239,6 +353,12 @@ async def require_uid_api(request: Request, pool=Depends(pool_dep)) -> int:
     if st != "active":
         request.session.clear()
         raise HTTPException(status_code=403, detail="Нет доступа")
+    return uid
+
+
+async def require_web_admin(uid: int = Depends(require_uid_api)) -> int:
+    if not is_web_admin(uid):
+        raise HTTPException(status_code=403, detail="Нужны права администратора")
     return uid
 
 
@@ -342,6 +462,39 @@ async def auth_verify(request: Request, pool=Depends(pool_dep)):
     return JSONResponse({"ok": True})
 
 
+def is_web_admin(uid: int) -> bool:
+    return uid in get_settings().web_admin_id_set
+
+
+def _normalize_reaction_emoji(raw: str) -> str | None:
+    s = (raw or "").strip()
+    if not s:
+        return None
+    if s in _REACTION_EMOJIS:
+        return s
+    return None
+
+
+def _re_totals_map(eids: list[int], count_rows: list[Any]) -> dict[int, dict[str, int]]:
+    m: dict[int, dict[str, int]] = {eid: {} for eid in eids}
+    for r in count_rows:
+        eid = int(r["event_id"])
+        if eid in m:
+            m[eid][str(r["emoji"])] = int(r["n"])
+    return m
+
+
+async def _build_feed_social(pool, viewer_uid: int, events: list[Any]) -> dict[str, Any]:
+    eids = [int(e["id"]) for e in events]
+    if not eids:
+        return {"re_mine": {}, "re_totals": {}}
+    count_rows = await repo.event_reaction_counts(pool, eids)
+    re_mine_raw = await repo.event_user_reactions_map(pool, viewer_uid, eids)
+    re_mine: dict[int, str | None] = {eid: re_mine_raw.get(eid) for eid in eids}
+    re_totals = _re_totals_map(eids, count_rows)
+    return {"re_mine": re_mine, "re_totals": re_totals}
+
+
 def _safe_under(root: Path, rel: str) -> Path | None:
     try:
         candidate = (root / rel).resolve()
@@ -353,16 +506,19 @@ def _safe_under(root: Path, rel: str) -> Path | None:
         return None
 
 
-@app.get("/api/library/{file_id}/raw")
-async def library_file_raw(
-    file_id: int,
-    request: Request,
-    pool=Depends(pool_dep),
-    _uid: int = Depends(require_uid_api),
-):
-    row = await repo.get_file_record(pool, file_id)
-    if not row or row["status"] != "confirmed":
-        raise HTTPException(status_code=404)
+def _unlink_library_file_if_safe(storage_path: str) -> None:
+    path = Path(storage_path)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    path = path.resolve()
+    lib = library_root().resolve()
+    if not str(path).startswith(str(lib)):
+        return
+    if path.is_file():
+        path.unlink()
+
+
+def _library_file_disk_path(row: Any) -> Path:
     path = Path(row["storage_path"])
     if not path.is_absolute():
         path = Path.cwd() / path
@@ -372,9 +528,35 @@ async def library_file_raw(
         raise HTTPException(status_code=404)
     if not path.is_file():
         raise HTTPException(status_code=404)
+    return path
+
+
+@app.get("/api/library/{file_id}/raw")
+async def library_file_raw(
+    file_id: int,
+    pool=Depends(pool_dep),
+    _uid: int = Depends(require_uid_api),
+    dl: int = Query(0, description="1 = скачать файлом, 0 = показать inline (превью)"),
+):
+    row = await repo.get_file_record(pool, file_id)
+    if not row or row["status"] != "confirmed":
+        raise HTTPException(status_code=404)
+    path = _library_file_disk_path(row)
     mime = row.get("mime_type") or "application/octet-stream"
     name = row.get("original_filename") or path.name
-    return FileResponse(path, media_type=mime, filename=name)
+    if dl == 1:
+        return FileResponse(
+            path,
+            media_type=mime,
+            filename=name,
+            content_disposition_type="attachment",
+        )
+    return FileResponse(
+        path,
+        media_type=mime,
+        filename=None,
+        content_disposition_type="inline",
+    )
 
 
 @app.get("/media/profile/{telegram_user_id}/{filename}")
@@ -389,7 +571,7 @@ async def profile_media(
     prof = await repo.get_member_profile(pool, telegram_user_id)
     if not prof:
         raise HTTPException(status_code=404)
-    paths = prof.get("photo_paths") or []
+    paths = _valid_photo_paths(prof.get("photo_paths"))
     rel = f"{telegram_user_id}/{filename}"
     ok = any(str(p).replace("\\", "/") == rel for p in paths)
     if not ok:
@@ -399,6 +581,127 @@ async def profile_media(
     if not full or not full.is_file():
         raise HTTPException(status_code=404)
     return FileResponse(full)
+
+
+@app.get("/api/profile/{telegram_user_id}/resume")
+async def profile_resume_download(
+    telegram_user_id: int,
+    pool=Depends(pool_dep),
+    _uid: int = Depends(require_uid_api),
+):
+    prof = await repo.get_member_profile(pool, telegram_user_id)
+    if not prof or not prof.get("resume_path"):
+        raise HTTPException(status_code=404)
+    rel = str(prof["resume_path"]).strip().replace("\\", "/")
+    if ".." in rel or not rel.startswith(f"{telegram_user_id}/"):
+        raise HTTPException(status_code=404)
+    root = profile_root().resolve()
+    full = _safe_under(root, rel)
+    if not full or not full.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(
+        full,
+        media_type="application/pdf",
+        filename="resume.pdf",
+        content_disposition_type="attachment",
+    )
+
+
+@app.get("/api/events/{event_id}/cover")
+async def event_cover_image(
+    event_id: int,
+    pool=Depends(pool_dep),
+    _uid: int = Depends(require_uid_api),
+):
+    row = await repo.fetch_published_event(pool, event_id)
+    if not row or not row.get("cover_image_path"):
+        raise HTTPException(status_code=404)
+    full = _safe_event_cover_disk_path(str(row["cover_image_path"]))
+    if full is None:
+        raise HTTPException(status_code=404)
+    mime, _ = mimetypes.guess_type(str(full))
+    return FileResponse(full, media_type=mime or "image/jpeg")
+
+
+@app.patch("/api/events/{event_id}/ends_at")
+async def api_patch_event_ends_at(
+    event_id: int,
+    body: EventEndsAtBody,
+    pool=Depends(pool_dep),
+    _uid: int = Depends(require_uid_api),
+):
+    row = await repo.fetch_published_event(pool, event_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Событие не найдено")
+    raw = (body.ends_at or "").strip()[:10]
+    try:
+        d = date.fromisoformat(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ожидается дата YYYY-MM-DD")
+    ends = datetime.combine(d, dt_time(23, 59, 59), tzinfo=timezone.utc)
+    ok = await repo.update_event_ends_at(pool, event_id, ends)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Не обновлено")
+    return JSONResponse({"ok": True, "ends_at": ends.isoformat()})
+
+
+@app.delete("/api/library/{file_id}")
+async def api_delete_library_file(
+    file_id: int,
+    pool=Depends(pool_dep),
+    _admin: int = Depends(require_web_admin),
+):
+    row = await repo.mark_library_file_deleted(pool, file_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Файл не найден или уже удалён")
+    _unlink_library_file_if_safe(str(row["storage_path"]))
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/api/events/{event_id}")
+async def api_hide_event(
+    event_id: int,
+    pool=Depends(pool_dep),
+    _admin: int = Depends(require_web_admin),
+):
+    ev = await repo.fetch_event_for_admin(pool, event_id)
+    if not ev or str(ev["status"]) != "published":
+        raise HTTPException(status_code=404, detail="Событие не найдено или уже скрыто")
+    ok = await repo.hide_published_event(pool, event_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Не удалось скрыть")
+    mid = ev.get("published_message_id")
+    chat = get_settings().telegram_group_chat_id
+    if mid and chat is not None:
+        await _telegram_try_delete_message(chat, int(mid))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/events/{event_id}/react")
+async def api_event_react(
+    event_id: int,
+    body: EventReactBody,
+    pool=Depends(pool_dep),
+    uid: int = Depends(require_uid_api),
+):
+    row = await repo.fetch_published_event(pool, event_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Событие не найдено")
+    em = _normalize_reaction_emoji(body.emoji)
+    if body.emoji.strip() and em is None:
+        raise HTTPException(status_code=400, detail="Недопустимая реакция")
+    if em is None:
+        await repo.delete_event_reaction(pool, event_id, uid)
+    else:
+        await repo.upsert_event_reaction(pool, event_id, uid, em)
+    count_rows = await repo.event_reaction_counts(pool, [event_id])
+    counts = [
+        {"emoji": str(r["emoji"]), "n": int(r["n"])}
+        for r in count_rows
+        if int(r["event_id"]) == event_id
+    ]
+    mine_map = await repo.event_user_reactions_map(pool, uid, [event_id])
+    return JSONResponse({"ok": True, "counts": counts, "mine": mine_map.get(event_id)})
 
 
 @app.get("/library", response_class=HTMLResponse)
@@ -427,7 +730,9 @@ async def page_library(
                 "uid": uid,
                 "view": "folders",
                 "categories": cats,
+                "is_admin": is_web_admin(uid),
             },
+            headers=_no_store_headers(),
         )
 
     cat_label = next((c["label_ru"] for c in cats if c["slug"] == cat), cat)
@@ -450,7 +755,9 @@ async def page_library(
             "categories": cats,
             "files": files,
             "selected": selected,
+            "is_admin": is_web_admin(uid),
         },
+        headers=_no_store_headers(),
     )
 
 
@@ -464,17 +771,253 @@ async def page_feed(request: Request, pool=Depends(pool_dep)):
         return RedirectResponse("/login", status_code=302)
     events = await repo.list_events_feed(pool, limit=80)
     metrics = _events_metrics(events)
+    social = await _build_feed_social(pool, uid, events)
     return _templates.TemplateResponse(
         request,
         "feed.html",
         {
-            "title": "Мероприятия",
+            "title": "Новости",
             "nav": "feed",
             "events": events,
             "metrics": metrics,
             "uid": uid,
+            "is_admin": is_web_admin(uid),
+            "re_mine": social["re_mine"],
+            "re_totals": social["re_totals"],
+            "reaction_emojis": _REACTION_EMOJIS,
         },
+        headers=_no_store_headers(),
     )
+
+
+def _optional_date_start(s: str | None) -> datetime | None:
+    raw = (s or "").strip()
+    if not raw:
+        return None
+    try:
+        d = date.fromisoformat(raw[:10])
+        return datetime.combine(d, dt_time(0, 0, 0), tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _optional_date_end(s: str | None) -> datetime | None:
+    raw = (s or "").strip()
+    if not raw:
+        return None
+    try:
+        d = date.fromisoformat(raw[:10])
+        return datetime.combine(d, dt_time(23, 59, 59), tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+@app.get("/hackathons", response_class=HTMLResponse)
+async def page_hackathons(request: Request, pool=Depends(pool_dep)):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    teams = await repo.list_hackathon_teams(pool, limit=100)
+    return _templates.TemplateResponse(
+        request,
+        "hackathons.html",
+        {
+            "title": "Хакатоны и мероприятия",
+            "nav": "hackathons",
+            "uid": uid,
+            "teams": teams,
+        },
+        headers=_no_store_headers(),
+    )
+
+
+@app.get("/hackathons/create", response_class=HTMLResponse)
+async def page_hackathon_create_get(request: Request, pool=Depends(pool_dep)):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    return _templates.TemplateResponse(
+        request,
+        "hackathon_create.html",
+        {"title": "Новая команда", "nav": "hackathons", "uid": uid, "error": None},
+        headers=_no_store_headers(),
+    )
+
+
+@app.post("/hackathons/create")
+async def page_hackathon_create_post(
+    request: Request,
+    pool=Depends(pool_dep),
+    title: str = Form(""),
+    description: str = Form(""),
+    max_members: int = Form(4),
+    starts_at: str = Form(""),
+    ends_at: str = Form(""),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+
+    t = title.strip()
+    desc = (description or "").strip()
+    if len(t) < 2 or len(t) > 200:
+        return _templates.TemplateResponse(
+            request,
+            "hackathon_create.html",
+            {
+                "title": "Новая команда",
+                "nav": "hackathons",
+                "uid": uid,
+                "error": "Название: от 2 до 200 символов.",
+            },
+            status_code=400,
+        )
+    if len(desc) > 8000:
+        return _templates.TemplateResponse(
+            request,
+            "hackathon_create.html",
+            {
+                "title": "Новая команда",
+                "nav": "hackathons",
+                "uid": uid,
+                "error": "Описание слишком длинное (макс. 8000 символов).",
+            },
+            status_code=400,
+        )
+    try:
+        mm = int(max_members)
+    except (TypeError, ValueError):
+        mm = 0
+    if mm < 2 or mm > 30:
+        return _templates.TemplateResponse(
+            request,
+            "hackathon_create.html",
+            {
+                "title": "Новая команда",
+                "nav": "hackathons",
+                "uid": uid,
+                "error": "Размер команды: от 2 до 30 человек (включая тебя).",
+            },
+            status_code=400,
+        )
+    s_dt = _optional_date_start(starts_at)
+    e_dt = _optional_date_end(ends_at)
+    if s_dt and e_dt and e_dt < s_dt:
+        return _templates.TemplateResponse(
+            request,
+            "hackathon_create.html",
+            {
+                "title": "Новая команда",
+                "nav": "hackathons",
+                "uid": uid,
+                "error": "Дата окончания раньше даты начала.",
+            },
+            status_code=400,
+        )
+
+    tid = await repo.create_hackathon_team(
+        pool,
+        title=t,
+        description=desc,
+        starts_at=s_dt,
+        ends_at=e_dt,
+        max_members=mm,
+        creator_telegram_id=uid,
+    )
+    return RedirectResponse(f"/hackathons/{tid}", status_code=303)
+
+
+@app.get("/hackathons/{team_id}", response_class=HTMLResponse)
+async def page_hackathon_detail(team_id: int, request: Request, pool=Depends(pool_dep)):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    team = await repo.get_hackathon_team(pool, team_id)
+    if not team:
+        raise HTTPException(status_code=404, detail="Команда не найдена")
+    members = await repo.list_hackathon_team_members(pool, team_id)
+    pending: list[Any] = []
+    if int(team["creator_telegram_id"]) == uid:
+        pending = await repo.list_hackathon_pending_applications(pool, team_id)
+    app_row = await repo.get_hackathon_application(pool, team_id, uid)
+    is_member = await repo.is_hackathon_team_member(pool, team_id, uid)
+    toast = request.query_params.get("toast")
+    return _templates.TemplateResponse(
+        request,
+        "hackathon_detail.html",
+        {
+            "title": team["title"],
+            "nav": "hackathons",
+            "uid": uid,
+            "team": team,
+            "members": members,
+            "pending": pending,
+            "app_row": app_row,
+            "is_member": is_member,
+            "toast": toast,
+        },
+        headers=_no_store_headers(),
+    )
+
+
+@app.post("/hackathons/{team_id}/apply")
+async def hackathon_apply_post(team_id: int, request: Request, pool=Depends(pool_dep)):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    code = await repo.apply_hackathon_team(pool, team_id, uid)
+    return RedirectResponse(f"/hackathons/{team_id}?toast={code}", status_code=303)
+
+
+@app.post("/hackathons/{team_id}/applications/{application_id}/accept")
+async def hackathon_accept_post(
+    team_id: int,
+    application_id: int,
+    request: Request,
+    pool=Depends(pool_dep),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    r = await repo.hackathon_accept_application(pool, application_id, uid)
+    suffix = "accepted_ok" if r == "ok" else r
+    return RedirectResponse(f"/hackathons/{team_id}?toast={suffix}", status_code=303)
+
+
+@app.post("/hackathons/{team_id}/applications/{application_id}/reject")
+async def hackathon_reject_post(
+    team_id: int,
+    application_id: int,
+    request: Request,
+    pool=Depends(pool_dep),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    r = await repo.hackathon_reject_application(pool, application_id, uid)
+    suffix = "rejected_ok" if r == "ok" else r
+    return RedirectResponse(f"/hackathons/{team_id}?toast={suffix}", status_code=303)
 
 
 @app.get("/today", response_class=HTMLResponse)
@@ -485,18 +1028,19 @@ async def page_today(request: Request, pool=Depends(pool_dep)):
     if await repo.member_status(pool, uid) != "active":
         request.session.clear()
         return RedirectResponse("/login", status_code=302)
-    strip = await repo.list_events_today_strip(pool, limit=20)
+    strip = await repo.list_events_digest(pool, limit=35)
     metrics = _events_metrics(strip)
     return _templates.TemplateResponse(
         request,
         "today.html",
         {
-            "title": "Сегодня",
+            "title": "Выжимка",
             "nav": "today",
             "events": strip,
             "metrics": metrics,
             "uid": uid,
         },
+        headers=_no_store_headers(),
     )
 
 
@@ -565,6 +1109,8 @@ async def page_me_save(
     display_name: str = Form(""),
     bio: str = Form(""),
     github_url: str = Form(""),
+    clear_resume: str | None = Form(None),
+    resume: UploadFile | None = File(None),
     photos: list[UploadFile] = File(default_factory=list),
 ):
     uid = session_uid(request)
@@ -657,11 +1203,63 @@ async def page_me_save(
             rel_paths.append(f"{uid}/{fn}")
 
     existing = await repo.get_member_profile(pool, uid)
-    old_photos: list[str] = []
-    if existing and existing.get("photo_paths"):
-        old_photos = list(existing["photo_paths"])
+    old_photos = _valid_photo_paths(existing.get("photo_paths") if existing else None)
 
-    final_photos = rel_paths if rel_paths else old_photos
+    final_photos = _valid_photo_paths(rel_paths) if rel_paths else old_photos
+
+    resume_relpath: str | None = None
+    if existing and existing.get("resume_path"):
+        rp = str(existing["resume_path"]).strip().replace("\\", "/")
+        resume_relpath = rp if rp and ".." not in rp else None
+
+    if clear_resume == "1":
+        if resume_relpath:
+            try:
+                old_abs = _safe_under(profile_root().resolve(), resume_relpath)
+                if old_abs and old_abs.is_file():
+                    old_abs.unlink()
+            except Exception:
+                log.warning("remove old resume failed", exc_info=True)
+        resume_relpath = None
+
+    resume_up = resume
+    if resume_up and resume_up.filename:
+        max_r = settings.web_max_resume_mb * 1024 * 1024
+        body = await resume_up.read()
+        if len(body) > max_r:
+            return _templates.TemplateResponse(
+                request,
+                "profile_edit.html",
+                {
+                    "title": "Мой профиль",
+                    "nav": "me",
+                    "p": await repo.get_member_profile(pool, uid),
+                    "uid": uid,
+                    "github_ok": _github_ok,
+                    "error": f"Резюме слишком большое (макс. {settings.web_max_resume_mb} МБ)",
+                },
+                status_code=400,
+            )
+        ct = (resume_up.content_type or "").split(";")[0].strip().lower()
+        if ct != "application/pdf" and not (resume_up.filename or "").lower().endswith(".pdf"):
+            return _templates.TemplateResponse(
+                request,
+                "profile_edit.html",
+                {
+                    "title": "Мой профиль",
+                    "nav": "me",
+                    "p": await repo.get_member_profile(pool, uid),
+                    "uid": uid,
+                    "github_ok": _github_ok,
+                    "error": "Резюме только в формате PDF",
+                },
+                status_code=400,
+            )
+        user_dir = profile_root() / str(uid)
+        user_dir.mkdir(parents=True, exist_ok=True)
+        dest = user_dir / "resume.pdf"
+        dest.write_bytes(body)
+        resume_relpath = f"{uid}/resume.pdf"
 
     await repo.upsert_member_profile(
         pool,
@@ -670,5 +1268,6 @@ async def page_me_save(
         bio=bio.strip() or None,
         github_url=g,
         photo_paths=final_photos,
+        resume_path=resume_relpath,
     )
     return RedirectResponse("/me", status_code=303)

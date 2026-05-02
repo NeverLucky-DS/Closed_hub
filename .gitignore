@@ -9,6 +9,11 @@ storage/
 *.log
 .DS_Store
 
+# Заглушки превью новостей (свои изображения локально; в репозитории только NAMES.txt и .gitkeep)
+web/static/news-placeholders/*
+!web/static/news-placeholders/.gitkeep
+!web/static/news-placeholders/NAMES.txt
+
 # Ключи Google Cloud / сервисные аккаунты (локально, не в репозиторий)
 closeml-*.json
 *-service-account*.json

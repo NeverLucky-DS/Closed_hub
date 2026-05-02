@@ -5,7 +5,7 @@
   <div>
     <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Профиль</div>
     <h1 class="mt-1 text-2xl md:text-3xl font-semibold tracking-tight">Как тебя видят другие</h1>
-    <p class="mt-1 text-sm text-ink-300">Заполни GitHub — это обязательно. Bio и фото — необязательно.</p>
+    <p class="mt-1 text-sm text-ink-300">GitHub обязателен. Bio, фото и резюме (PDF) — по желанию.</p>
   </div>
   <a href="/people/{{ uid }}" class="btn">{{ icon.user() }}<span>Открыть мой профиль</span></a>
 </header>
@@ -14,7 +14,7 @@
 <div class="card p-3 mb-5 border-rose-500/30 text-rose-300 text-sm">{{ error }}</div>
 {% endif %}
 
-{% set photos = p.photo_paths or [] %}
+{% set photos = p.photo_paths | valid_photos %}
 
 <form method="post" action="/me" enctype="multipart/form-data" class="grid grid-cols-1 lg:grid-cols-[1fr_22rem] gap-5">
   <div class="card p-5 md:p-6 space-y-5">
@@ -33,6 +33,21 @@
       <label for="bio" class="block text-sm text-ink-200 mb-1.5">О себе</label>
       <textarea id="bio" name="bio" rows="6" class="field"
                 placeholder="чем занимаешься, чем можешь помочь, чего ищешь">{{ p.bio or '' }}</textarea>
+    </div>
+
+    <div>
+      <label class="block text-sm text-ink-200 mb-1.5">Резюме (PDF, до {{ hub_settings.web_max_resume_mb }} МБ)</label>
+      {% if p.resume_path %}
+      <div class="flex flex-wrap items-center gap-3 mb-2">
+        <a href="/api/profile/{{ uid }}/resume" class="btn text-sm">{{ icon.file_pdf() }}<span>Скачать текущее</span></a>
+        <label class="inline-flex items-center gap-2 text-sm text-ink-300 cursor-pointer">
+          <input type="checkbox" name="clear_resume" value="1" class="rounded border-ink-600">
+          Удалить резюме при сохранении
+        </label>
+      </div>
+      {% endif %}
+      <input id="resume" name="resume" type="file" accept="application/pdf,.pdf" class="field py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-ink-700 file:px-3 file:py-1.5 file:text-sm">
+      <p class="mt-1 text-xs text-ink-300">Новый файл заменит старый. Без галочки «удалить» старое сохранится, если не выбрать новый файл.</p>
     </div>
 
     <div>
@@ -58,7 +73,7 @@
         {% if photos and photos[0] %}
         <img src="/media/profile/{{ uid }}/{{ photos[0].split('/')[-1] }}" class="w-14 h-14 rounded-xl object-cover">
         {% else %}
-        <span class="cover-bg {{ uid | avatar_cls }} w-14 h-14 rounded-xl flex items-center justify-center text-white text-xl font-semibold">
+        <span class="w-14 h-14 rounded-xl flex items-center justify-center text-xl font-semibold bg-ink-700 ring-1 ring-ink-600 text-ink-100">
           {{ p.display_name | initial(uid) }}
         </span>
         {% endif %}

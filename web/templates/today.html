@@ -2,46 +2,144 @@
 {% import "_icons.html" as icon %}
 {% block main %}
 <header class="mb-7">
-  <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Сегодня</div>
-  <h1 class="mt-1 text-2xl md:text-3xl font-semibold tracking-tight">Что прямо сейчас в хабе</h1>
-  <p class="mt-1 text-sm text-ink-300">
-    {{ metrics.total }} {{ metrics.total | ru_plural(['пункт','пункта','пунктов']) }} актуальных
-    {% if metrics.soon %} · <span class="text-amber-300/90">{{ metrics.soon }} с дедлайном на неделе</span>{% endif %}
+  <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Сейчас важно</div>
+  <h1 class="mt-1 text-2xl md:text-3xl font-semibold tracking-tight">Выжимка</h1>
+  <p class="mt-1 text-sm text-ink-300 max-w-2xl">
+    Короткий список того, к чему стоит подключиться прямо сейчас: свежие посты и то, у чего близкий дедлайн.
+    Нажми строку — укажи дату, до которой это актуально (если ещё не указана), или открой полную карточку в ленте.
   </p>
 </header>
 
 {% if events %}
-<div class="card divide-y divide-ink-600 overflow-hidden">
-  {% for e in events %}
-  {% set hdr = e | event_header %}
-  {% set summary = e | event_summary %}
-  {% set badges = e | event_badges %}
-  <a href="/feed#e-{{ e.id }}" class="flex items-center gap-4 px-4 py-3 hover:bg-ink-700/50 transition">
-    <span class="cover-bg {{ hdr | event_cover }} w-10 h-10 rounded-lg flex-shrink-0 flex items-center justify-center text-white/95 shadow-soft">
-      {{ icon.calendar() }}
-    </span>
-    <span class="min-w-0 flex-1">
-      <span class="block text-sm font-medium text-ink-100 truncate">{{ hdr }}</span>
-      {% if summary %}
-      <span class="block text-xs text-ink-300 truncate">{{ summary }}</span>
-      {% endif %}
-    </span>
-    <span class="flex items-center gap-1.5">
-      {% for b in badges %}
-        {% if b.kind == 'warn' %}<span class="badge badge-warn">{{ b.text }}</span>
-        {% elif b.kind == 'accent' %}<span class="badge badge-accent">{{ b.text }}</span>
-        {% else %}<span class="badge num">{{ b.text }}</span>{% endif %}
-      {% endfor %}
-    </span>
-    <span class="text-ink-300">{{ icon.chevron_right() }}</span>
-  </a>
-  {% endfor %}
+<div class="card p-5 md:p-7 max-w-2xl">
+  <ul class="space-y-3 list-none pl-0">
+    {% for e in events %}
+    {% set hdr = e | event_header %}
+    <li class="flex gap-3 items-start">
+      <span class="mt-2 h-1.5 w-1.5 rounded-full bg-ink-300 flex-shrink-0" aria-hidden="true"></span>
+      <div class="min-w-0 flex-1">
+        <button type="button"
+                class="digest-open text-left w-full text-[15px] md:text-base text-ink-100 leading-snug hover:text-white transition"
+                data-eid="{{ e.id }}"
+                data-title="{{ hdr | e }}"
+                data-has-end="{{ 1 if e.ends_at else 0 }}"
+                data-end="{{ e.ends_at.strftime('%Y-%m-%d') if e.ends_at else '' }}">
+          {{ hdr }}
+        </button>
+        <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-ink-400">
+          {% if e.ends_at %}
+          <span class="num">до {{ e.ends_at | dt_short }}</span>
+          {% else %}
+          <span class="rounded-md bg-ink-700/80 px-1.5 py-0.5 text-ink-200 ring-1 ring-ink-600">срок не указан</span>
+          {% endif %}
+          <a href="/feed#e-{{ e.id }}" class="text-accent hover:underline num">в ленту →</a>
+        </div>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
 </div>
 {% else %}
-<div class="card p-10 text-center">
-  <div class="mx-auto w-12 h-12 rounded-xl cover-bg cover-4 flex items-center justify-center text-white">{{ icon.flame() }}</div>
-  <p class="mt-4 text-ink-200">Сегодня пусто.</p>
-  <p class="mt-1 text-sm text-ink-300">Загляни в «Мероприятия» — там полная лента.</p>
+<div class="card p-10 text-center max-w-xl">
+  <div class="mx-auto w-12 h-12 rounded-xl bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-accent">{{ icon.flame() }}</div>
+  <p class="mt-4 text-ink-200">Сейчас выжимка пустая.</p>
+  <p class="mt-1 text-sm text-ink-300">Когда появятся свежие анонсы или дедлайны — они покажутся здесь. Полный список — в «Новости».</p>
 </div>
 {% endif %}
+
+<dialog id="digest-end-dialog" class="rounded-2xl border border-ink-600 bg-ink-800 text-ink-100 p-0 shadow-soft max-w-md w-[calc(100%-2rem)] backdrop:bg-black/60">
+  <form method="dialog" class="p-5 md:p-6">
+    <h2 class="text-sm uppercase tracking-[0.15em] text-ink-300">Дата окончания</h2>
+    <p id="digest-dialog-title" class="mt-2 text-base font-medium text-ink-100 leading-snug"></p>
+    <p class="mt-2 text-xs text-ink-300">После этой даты (конец дня UTC) новость скроется из ленты, если не продлите.</p>
+    <label class="mt-4 block text-sm text-ink-200">До какого числа актуально</label>
+    <input type="date" id="digest-end-input" class="field mt-1.5" required>
+    <p id="digest-dialog-err" class="mt-2 text-sm text-rose-300 hidden"></p>
+    <div class="mt-5 flex flex-wrap gap-2 justify-end">
+      <button type="button" id="digest-dialog-cancel" class="btn text-sm">Отмена</button>
+      <button type="submit" id="digest-dialog-save" class="btn btn-primary text-sm">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+(function () {
+  var dialog = document.getElementById("digest-end-dialog");
+  var titleEl = document.getElementById("digest-dialog-title");
+  var input = document.getElementById("digest-end-input");
+  var errEl = document.getElementById("digest-dialog-err");
+  var curId = null;
+
+  function openDialog(eid, title, hasEnd, endIso) {
+    curId = eid;
+    titleEl.textContent = title;
+    errEl.classList.add("hidden");
+    input.value = hasEnd ? endIso : "";
+    if (!input.value) {
+      var t = new Date();
+      t.setDate(t.getDate() + 7);
+      input.value = t.toISOString().slice(0, 10);
+    }
+    dialog.showModal();
+  }
+
+  document.querySelectorAll(".digest-open").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      openDialog(
+        btn.getAttribute("data-eid"),
+        btn.getAttribute("data-title"),
+        btn.getAttribute("data-has-end") === "1",
+        btn.getAttribute("data-end") || ""
+      );
+    });
+  });
+
+  document.getElementById("digest-dialog-cancel").addEventListener("click", function () {
+    dialog.close();
+  });
+
+  dialog.querySelector("form").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    if (!curId) return;
+    errEl.classList.add("hidden");
+    var v = (input.value || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+      errEl.textContent = "Выбери дату.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    fetch("/api/events/" + curId + "/ends_at", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ ends_at: v }),
+    })
+      .then(function (r) {
+        if (!r.ok) {
+          return r.json().catch(function () { return {}; }).then(function (j) {
+            var d = j.detail;
+            var msg = "Ошибка сохранения";
+            if (typeof d === "string") msg = d;
+            else if (Array.isArray(d) && d[0] && d[0].msg) msg = d[0].msg;
+            throw new Error(msg);
+          });
+        }
+        return r.json();
+      })
+      .then(function () {
+        dialog.close();
+        location.reload();
+      })
+      .catch(function (e) {
+        errEl.textContent = e.message || "Не сохранилось";
+        errEl.classList.remove("hidden");
+      });
+  });
+})();
+
+document.addEventListener("pageshow", function (e) {
+  if (e.persisted) location.reload();
+});
+</script>
 {% endblock %}

@@ -5,6 +5,8 @@ from typing import Any
 
 import asyncpg
 
+_UNSET = object()
+
 
 async def seed_whitelist_and_members(pool: asyncpg.Pool, user_ids: list[int]) -> None:
     if not user_ids:
@@ -273,6 +275,22 @@ async def abandon_awaiting_hr_drafts(pool: asyncpg.Pool, source_user_id: int) ->
         )
 
 
+async def abandon_hr_contact_by_id(
+    pool: asyncpg.Pool, hr_contact_id: int, source_user_id: int
+) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE hr_contacts SET status = 'abandoned', updated_at = now()
+            WHERE id = $1 AND source_user_id = $2 AND status = 'awaiting_context'
+            RETURNING id
+            """,
+            hr_contact_id,
+            source_user_id,
+        )
+        return row is not None
+
+
 async def get_hr_pending_confirm_for_user(pool: asyncpg.Pool, source_user_id: int) -> asyncpg.Record | None:
     async with pool.acquire() as conn:
         return await conn.fetchrow(
@@ -496,18 +514,31 @@ async def list_library_files(
 
 _EVENTS_ACTIVE_FILTER = """
     status = 'published'
-    AND (ends_at IS NULL OR ends_at >= date_trunc('day', now() AT TIME ZONE 'UTC'))
+    AND (ends_at IS NULL OR ends_at >= now())
 """
 
-_EVENTS_ORDER = """
+_EVENTS_ORDER_FEED = "ORDER BY created_at DESC"
+
+
+_DIGEST_FILTER = f"""
+    {_EVENTS_ACTIVE_FILTER}
+    AND (
+        (ends_at IS NOT NULL AND ends_at <= now() + interval '14 days')
+        OR (created_at >= now() - interval '7 days')
+        OR (ends_at IS NULL AND created_at >= now() - interval '14 days')
+    )
+"""
+
+_DIGEST_ORDER = """
     ORDER BY
         CASE
-            WHEN ends_at IS NOT NULL AND ends_at > now() AND ends_at <= now() + interval '7 days' THEN 0
-            WHEN created_at >= now() - interval '48 hours' THEN 1
-            ELSE 2
+            WHEN ends_at IS NOT NULL AND ends_at > now() AND ends_at <= now() + interval '3 days' THEN 0
+            WHEN ends_at IS NULL AND created_at >= now() - interval '72 hours' THEN 1
+            WHEN ends_at IS NOT NULL THEN 2
+            ELSE 3
         END,
         CASE
-            WHEN ends_at IS NOT NULL AND ends_at > now() AND ends_at <= now() + interval '7 days'
+            WHEN ends_at IS NOT NULL AND ends_at > now()
             THEN extract(epoch from ends_at)
         END ASC NULLS LAST,
         created_at DESC
@@ -519,10 +550,10 @@ async def list_events_feed(pool: asyncpg.Pool, limit: int = 50) -> list[asyncpg.
         rows = await conn.fetch(
             f"""
             SELECT id, raw_text, normalized_title, source_user_id,
-                   starts_at, ends_at, ai_summary, created_at
+                   starts_at, ends_at, ai_summary, cover_image_path, created_at
             FROM events
             WHERE {_EVENTS_ACTIVE_FILTER}
-            {_EVENTS_ORDER}
+            {_EVENTS_ORDER_FEED}
             LIMIT $1
             """,
             limit,
@@ -530,19 +561,48 @@ async def list_events_feed(pool: asyncpg.Pool, limit: int = 50) -> list[asyncpg.
         return list(rows)
 
 
-async def list_events_today_strip(pool: asyncpg.Pool, limit: int = 20) -> list[asyncpg.Record]:
+async def list_events_digest(pool: asyncpg.Pool, limit: int = 30) -> list[asyncpg.Record]:
+    """Выжимка: что близко по дедлайну или недавно добавлено — «прямо сейчас»."""
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             f"""
-            SELECT id, raw_text, normalized_title, ends_at, ai_summary, created_at
+            SELECT id, raw_text, normalized_title, ends_at, ai_summary, cover_image_path, created_at
             FROM events
-            WHERE {_EVENTS_ACTIVE_FILTER}
-            {_EVENTS_ORDER}
+            WHERE {_DIGEST_FILTER}
+            {_DIGEST_ORDER}
             LIMIT $1
             """,
             limit,
         )
         return list(rows)
+
+
+async def fetch_published_event(pool: asyncpg.Pool, event_id: int) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT id, raw_text, normalized_title, source_user_id,
+                   starts_at, ends_at, ai_summary, cover_image_path, created_at
+            FROM events
+            WHERE id = $1 AND status = 'published'
+            """,
+            event_id,
+        )
+
+
+async def update_event_ends_at(pool: asyncpg.Pool, event_id: int, ends_at: Any) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE events
+            SET ends_at = $2
+            WHERE id = $1 AND status = 'published'
+            RETURNING id
+            """,
+            event_id,
+            ends_at,
+        )
+        return row is not None
 
 
 async def update_event_summary(pool: asyncpg.Pool, event_id: int, ai_summary: str | None) -> None:
@@ -551,6 +611,30 @@ async def update_event_summary(pool: asyncpg.Pool, event_id: int, ai_summary: st
             "UPDATE events SET ai_summary = $2 WHERE id = $1",
             event_id,
             ai_summary,
+        )
+
+
+async def update_event_normalized_title(pool: asyncpg.Pool, event_id: int, title: str) -> None:
+    t = (title or "").strip()
+    if not t:
+        return
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE events SET normalized_title = $2 WHERE id = $1 AND status = 'published'",
+            event_id,
+            t,
+        )
+
+
+async def update_event_cover_path(pool: asyncpg.Pool, event_id: int, rel_path: str) -> None:
+    rel = (rel_path or "").strip().replace("\\", "/")
+    if not rel or ".." in rel:
+        return
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE events SET cover_image_path = $2 WHERE id = $1 AND status = 'published'",
+            event_id,
+            rel,
         )
 
 
@@ -647,6 +731,7 @@ async def upsert_member_profile(
     bio: str | None = None,
     github_url: str | None = None,
     photo_paths: list[str] | None = None,
+    resume_path: Any = _UNSET,
 ) -> None:
     async with pool.acquire() as conn:
         existing = await conn.fetchrow(
@@ -673,6 +758,10 @@ async def upsert_member_profile(
                 sets.append(f"photo_paths = ${idx}::jsonb")
                 args.append(json.dumps(photo_paths))
                 idx += 1
+            if resume_path is not _UNSET:
+                sets.append(f"resume_path = ${idx}")
+                args.append(resume_path)
+                idx += 1
             if not sets:
                 return
             sets.append("updated_at = now()")
@@ -680,18 +769,20 @@ async def upsert_member_profile(
             q = f"UPDATE member_profiles SET {', '.join(sets)} WHERE telegram_user_id = ${idx}"
             await conn.execute(q, *args)
         else:
+            rp_ins = None if resume_path is _UNSET else resume_path
             await conn.execute(
                 """
                 INSERT INTO member_profiles (
-                    telegram_user_id, display_name, bio, github_url, photo_paths, updated_at
+                    telegram_user_id, display_name, bio, github_url, photo_paths, resume_path, updated_at
                 )
-                VALUES ($1, $2, $3, COALESCE($4, 'https://github.com/'), COALESCE($5::jsonb, '[]'::jsonb), now())
+                VALUES ($1, $2, $3, COALESCE($4, 'https://github.com/'), COALESCE($5::jsonb, '[]'::jsonb), $6, now())
                 """,
                 telegram_user_id,
                 display_name,
                 bio,
                 github_url if github_url is not None else "https://github.com/",
                 json.dumps(photo_paths if photo_paths is not None else []),
+                rp_ins,
             )
 
 
@@ -699,7 +790,7 @@ async def list_public_profiles(pool: asyncpg.Pool, limit: int = 200) -> list[asy
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT p.telegram_user_id, p.display_name, p.bio, p.github_url, p.photo_paths
+            SELECT p.telegram_user_id, p.display_name, p.bio, p.github_url, p.photo_paths, p.resume_path
             FROM member_profiles p
             INNER JOIN members m ON m.telegram_user_id = p.telegram_user_id
             WHERE m.status = 'active'
@@ -807,3 +898,456 @@ async def count_activity_reason_since(
             since,
         )
         return int(row["n"]) if row else 0
+
+
+async def mark_library_file_deleted(pool: asyncpg.Pool, file_id: int) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            UPDATE files
+            SET status = 'deleted'
+            WHERE id = $1 AND status = 'confirmed'
+            RETURNING id, storage_path, confirmed_category
+            """,
+            file_id,
+        )
+
+
+async def fetch_event_for_admin(pool: asyncpg.Pool, event_id: int) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT id, status, published_message_id
+            FROM events
+            WHERE id = $1
+            """,
+            event_id,
+        )
+
+
+async def hide_published_event(pool: asyncpg.Pool, event_id: int) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE events
+            SET status = 'hidden'
+            WHERE id = $1 AND status = 'published'
+            RETURNING id
+            """,
+            event_id,
+        )
+        return row is not None
+
+
+async def event_reaction_counts(pool: asyncpg.Pool, event_ids: list[int]) -> list[asyncpg.Record]:
+    if not event_ids:
+        return []
+    async with pool.acquire() as conn:
+        return list(
+            await conn.fetch(
+                """
+                SELECT event_id, emoji, COUNT(*)::int AS n
+                FROM event_reactions
+                WHERE event_id = ANY($1::bigint[])
+                GROUP BY event_id, emoji
+                ORDER BY event_id, n DESC, emoji
+                """,
+                event_ids,
+            )
+        )
+
+
+async def event_user_reactions_map(
+    pool: asyncpg.Pool, telegram_user_id: int, event_ids: list[int]
+) -> dict[int, str]:
+    if not event_ids:
+        return {}
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT event_id, emoji
+            FROM event_reactions
+            WHERE telegram_user_id = $1 AND event_id = ANY($2::bigint[])
+            """,
+            telegram_user_id,
+            event_ids,
+        )
+    return {int(r["event_id"]): str(r["emoji"]) for r in rows}
+
+
+async def upsert_event_reaction(
+    pool: asyncpg.Pool, event_id: int, telegram_user_id: int, emoji: str
+) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO event_reactions (event_id, telegram_user_id, emoji)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (event_id, telegram_user_id)
+            DO UPDATE SET emoji = EXCLUDED.emoji, created_at = now()
+            """,
+            event_id,
+            telegram_user_id,
+            emoji,
+        )
+
+
+async def delete_event_reaction(pool: asyncpg.Pool, event_id: int, telegram_user_id: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM event_reactions WHERE event_id = $1 AND telegram_user_id = $2",
+            event_id,
+            telegram_user_id,
+        )
+
+
+async def list_event_comments_limited(
+    pool: asyncpg.Pool, event_ids: list[int], per_event: int = 12
+) -> list[asyncpg.Record]:
+    if not event_ids:
+        return []
+    async with pool.acquire() as conn:
+        return list(
+            await conn.fetch(
+                """
+                WITH ranked AS (
+                    SELECT
+                        c.id,
+                        c.event_id,
+                        c.author_telegram_id,
+                        c.body,
+                        c.created_at,
+                        mp.display_name AS author_display_name,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY c.event_id ORDER BY c.created_at ASC
+                        ) AS rn
+                    FROM event_comments c
+                    LEFT JOIN member_profiles mp
+                        ON mp.telegram_user_id = c.author_telegram_id
+                    WHERE c.event_id = ANY($1::bigint[])
+                )
+                SELECT id, event_id, author_telegram_id, body, created_at, author_display_name
+                FROM ranked
+                WHERE rn <= $2
+                ORDER BY event_id, created_at ASC
+                """,
+                event_ids,
+                per_event,
+            )
+        )
+
+
+async def insert_event_comment(
+    pool: asyncpg.Pool, event_id: int, author_telegram_id: int, body: str
+) -> int:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO event_comments (event_id, author_telegram_id, body)
+            VALUES ($1, $2, $3)
+            RETURNING id
+            """,
+            event_id,
+            author_telegram_id,
+            body,
+        )
+        return int(row["id"])
+
+
+async def fetch_event_comment(pool: asyncpg.Pool, comment_id: int) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow("SELECT * FROM event_comments WHERE id = $1", comment_id)
+
+
+async def delete_event_comment(pool: asyncpg.Pool, comment_id: int) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            "DELETE FROM event_comments WHERE id = $1 RETURNING id, event_id, author_telegram_id",
+            comment_id,
+        )
+
+
+async def create_hackathon_team(
+    pool: asyncpg.Pool,
+    *,
+    title: str,
+    description: str,
+    starts_at: Any | None,
+    ends_at: Any | None,
+    max_members: int,
+    creator_telegram_id: int,
+) -> int:
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                INSERT INTO hackathon_teams (
+                    title, description, starts_at, ends_at, max_members, creator_telegram_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id
+                """,
+                title,
+                description,
+                starts_at,
+                ends_at,
+                max_members,
+                creator_telegram_id,
+            )
+            tid = int(row["id"])
+            await conn.execute(
+                """
+                INSERT INTO hackathon_team_members (team_id, telegram_user_id, role)
+                VALUES ($1, $2, 'creator')
+                """,
+                tid,
+                creator_telegram_id,
+            )
+            return tid
+
+
+async def list_hackathon_teams(pool: asyncpg.Pool, limit: int = 100) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        return list(
+            await conn.fetch(
+                """
+                SELECT
+                    t.*,
+                    (
+                        SELECT COUNT(*)::int FROM hackathon_team_members m
+                        WHERE m.team_id = t.id
+                    ) AS member_count
+                FROM hackathon_teams t
+                WHERE t.status = 'open'
+                ORDER BY t.created_at DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+        )
+
+
+async def get_hackathon_team(pool: asyncpg.Pool, team_id: int) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT
+                t.*,
+                (
+                    SELECT COUNT(*)::int FROM hackathon_team_members m
+                    WHERE m.team_id = t.id
+                ) AS member_count
+            FROM hackathon_teams t
+            WHERE t.id = $1
+            """,
+            team_id,
+        )
+
+
+async def list_hackathon_team_members(pool: asyncpg.Pool, team_id: int) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        return list(
+            await conn.fetch(
+                """
+                SELECT
+                    m.telegram_user_id,
+                    m.role,
+                    m.joined_at,
+                    mp.display_name,
+                    mp.photo_paths
+                FROM hackathon_team_members m
+                LEFT JOIN member_profiles mp ON mp.telegram_user_id = m.telegram_user_id
+                WHERE m.team_id = $1
+                ORDER BY
+                    CASE WHEN m.role = 'creator' THEN 0 ELSE 1 END,
+                    m.joined_at ASC
+                """,
+                team_id,
+            )
+        )
+
+
+async def is_hackathon_team_member(pool: asyncpg.Pool, team_id: int, telegram_user_id: int) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT 1 FROM hackathon_team_members
+            WHERE team_id = $1 AND telegram_user_id = $2
+            """,
+            team_id,
+            telegram_user_id,
+        )
+        return row is not None
+
+
+async def get_hackathon_application(
+    pool: asyncpg.Pool, team_id: int, applicant_telegram_id: int
+) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT * FROM hackathon_applications
+            WHERE team_id = $1 AND applicant_telegram_id = $2
+            """,
+            team_id,
+            applicant_telegram_id,
+        )
+
+
+async def list_hackathon_pending_applications(
+    pool: asyncpg.Pool, team_id: int
+) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        return list(
+            await conn.fetch(
+                """
+                SELECT
+                    a.id,
+                    a.applicant_telegram_id,
+                    a.created_at,
+                    mp.display_name,
+                    mp.photo_paths
+                FROM hackathon_applications a
+                LEFT JOIN member_profiles mp ON mp.telegram_user_id = a.applicant_telegram_id
+                WHERE a.team_id = $1 AND a.status = 'pending'
+                ORDER BY a.created_at ASC
+                """,
+                team_id,
+            )
+        )
+
+
+async def apply_hackathon_team(
+    pool: asyncpg.Pool, team_id: int, applicant_telegram_id: int
+) -> str:
+    """Возвращает: ok | full | closed | already_member | already_pending | team_missing."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            team = await conn.fetchrow(
+                "SELECT id, max_members, status FROM hackathon_teams WHERE id = $1 FOR UPDATE",
+                team_id,
+            )
+            if not team:
+                return "team_missing"
+            if str(team["status"]) != "open":
+                return "closed"
+            n = await conn.fetchval(
+                "SELECT COUNT(*)::int FROM hackathon_team_members WHERE team_id = $1",
+                team_id,
+            )
+            if int(n) >= int(team["max_members"]):
+                return "full"
+            mem = await conn.fetchrow(
+                """
+                SELECT 1 FROM hackathon_team_members
+                WHERE team_id = $1 AND telegram_user_id = $2
+                """,
+                team_id,
+                applicant_telegram_id,
+            )
+            if mem:
+                return "already_member"
+            existing = await conn.fetchrow(
+                """
+                SELECT status FROM hackathon_applications
+                WHERE team_id = $1 AND applicant_telegram_id = $2
+                """,
+                team_id,
+                applicant_telegram_id,
+            )
+            if existing:
+                st = str(existing["status"])
+                if st == "pending":
+                    return "already_pending"
+                if st == "accepted":
+                    return "already_member"
+                if st == "rejected":
+                    await conn.execute(
+                        """
+                        UPDATE hackathon_applications
+                        SET status = 'pending', created_at = now()
+                        WHERE team_id = $1 AND applicant_telegram_id = $2
+                        """,
+                        team_id,
+                        applicant_telegram_id,
+                    )
+                    return "ok"
+            await conn.execute(
+                """
+                INSERT INTO hackathon_applications (team_id, applicant_telegram_id, status)
+                VALUES ($1, $2, 'pending')
+                """,
+                team_id,
+                applicant_telegram_id,
+            )
+            return "ok"
+
+
+async def hackathon_accept_application(
+    pool: asyncpg.Pool, application_id: int, acting_creator_id: int
+) -> str:
+    """ok | forbidden | not_pending | full | missing."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            app = await conn.fetchrow(
+                "SELECT * FROM hackathon_applications WHERE id = $1 FOR UPDATE",
+                application_id,
+            )
+            if not app:
+                return "missing"
+            if str(app["status"]) != "pending":
+                return "not_pending"
+            team_id = int(app["team_id"])
+            team = await conn.fetchrow(
+                "SELECT * FROM hackathon_teams WHERE id = $1 FOR UPDATE",
+                team_id,
+            )
+            if not team or int(team["creator_telegram_id"]) != acting_creator_id:
+                return "forbidden"
+            n = await conn.fetchval(
+                "SELECT COUNT(*)::int FROM hackathon_team_members WHERE team_id = $1",
+                team_id,
+            )
+            if int(n) >= int(team["max_members"]):
+                return "full"
+            applicant = int(app["applicant_telegram_id"])
+            await conn.execute(
+                """
+                INSERT INTO hackathon_team_members (team_id, telegram_user_id, role)
+                VALUES ($1, $2, 'member')
+                ON CONFLICT (team_id, telegram_user_id) DO NOTHING
+                """,
+                team_id,
+                applicant,
+            )
+            await conn.execute(
+                "UPDATE hackathon_applications SET status = 'accepted' WHERE id = $1",
+                application_id,
+            )
+            return "ok"
+
+
+async def hackathon_reject_application(
+    pool: asyncpg.Pool, application_id: int, acting_creator_id: int
+) -> str:
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            app = await conn.fetchrow(
+                "SELECT * FROM hackathon_applications WHERE id = $1 FOR UPDATE",
+                application_id,
+            )
+            if not app:
+                return "missing"
+            if str(app["status"]) != "pending":
+                return "not_pending"
+            team = await conn.fetchrow(
+                "SELECT creator_telegram_id FROM hackathon_teams WHERE id = $1",
+                int(app["team_id"]),
+            )
+            if not team or int(team["creator_telegram_id"]) != acting_creator_id:
+                return "forbidden"
+            await conn.execute(
+                "UPDATE hackathon_applications SET status = 'rejected' WHERE id = $1",
+                application_id,
+            )
+            return "ok"

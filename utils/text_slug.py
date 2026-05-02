@@ -6,17 +6,20 @@ import unicodedata
 
 
 def slugify_folder(name: str, max_len: int = 48) -> str:
-    raw = unicodedata.normalize("NFKD", name.strip())
-    ascii_s = raw.encode("ascii", "ignore").decode("ascii")
-    s = ascii_s.lower()
+    """Имя папки в библиотеке: латиница как раньше; кириллица и др. — через Unicode \\w (путь на диске)."""
+    raw = unicodedata.normalize("NFKC", (name or "").strip())
+    if not raw:
+        return "custom"
+    s = raw.casefold()
     s = re.sub(r"[\s/\\]+", "-", s)
-    s = re.sub(r"[^a-z0-9_-]+", "", s)
+    s = re.sub(r"[^\w\-]+", "", s, flags=re.UNICODE)
     s = re.sub(r"-{2,}", "-", s).strip("-")
     if not s:
-        s = "custom"
+        h = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:14]
+        s = f"cat_{h}"
     if len(s) > max_len:
         s = s[:max_len].rstrip("-")
-    return s or "custom"
+    return s or f"cat_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:14]}"
 
 
 def interview_company_slug(company_ru: str, max_len: int = 48) -> str:

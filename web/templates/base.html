@@ -61,10 +61,13 @@
         {{ icon.folder() }}<span>Файлы</span>
       </a>
       <a href="/feed" class="nav-link {{ 'active' if nav == 'feed' else '' }}">
-        {{ icon.layers() }}<span>Мероприятия</span>
+        {{ icon.layers() }}<span>Новости</span>
       </a>
       <a href="/today" class="nav-link {{ 'active' if nav == 'today' else '' }}">
-        {{ icon.flame() }}<span>Сегодня</span>
+        {{ icon.flame() }}<span>Выжимка</span>
+      </a>
+      <a href="/hackathons" class="nav-link {{ 'active' if nav == 'hackathons' else '' }}">
+        {{ icon.sparkle() }}<span>Хакатоны</span>
       </a>
       <a href="/people" class="nav-link {{ 'active' if nav == 'people' else '' }}">
         {{ icon.users() }}<span>Люди</span>
@@ -92,8 +95,9 @@
   </header>
   <nav class="md:hidden flex overflow-x-auto gap-1 px-2 py-2 bg-ink-900 border-b border-ink-600 text-sm">
     <a href="/library" class="nav-link whitespace-nowrap {{ 'active' if nav == 'library' else '' }}">{{ icon.folder() }}<span>Файлы</span></a>
-    <a href="/feed" class="nav-link whitespace-nowrap {{ 'active' if nav == 'feed' else '' }}">{{ icon.layers() }}<span>Мероприятия</span></a>
-    <a href="/today" class="nav-link whitespace-nowrap {{ 'active' if nav == 'today' else '' }}">{{ icon.flame() }}<span>Сегодня</span></a>
+    <a href="/feed" class="nav-link whitespace-nowrap {{ 'active' if nav == 'feed' else '' }}">{{ icon.layers() }}<span>Новости</span></a>
+    <a href="/today" class="nav-link whitespace-nowrap {{ 'active' if nav == 'today' else '' }}">{{ icon.flame() }}<span>Выжимка</span></a>
+    <a href="/hackathons" class="nav-link whitespace-nowrap {{ 'active' if nav == 'hackathons' else '' }}">{{ icon.sparkle() }}<span>Хакатоны</span></a>
     <a href="/people" class="nav-link whitespace-nowrap {{ 'active' if nav == 'people' else '' }}">{{ icon.users() }}<span>Люди</span></a>
     <a href="/me" class="nav-link whitespace-nowrap {{ 'active' if nav == 'me' else '' }}">{{ icon.user() }}<span>Профиль</span></a>
   </nav>
@@ -107,5 +111,6 @@
   {% block public %}{% endblock %}
 </main>
 {% endif %}
+{% block extra_scripts %}{% endblock %}
 </body>
 </html>
