@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% set section = "HR" %}
+{% set page_title = "HR-контакты" %}
+{% set page_subtitle = "Подтверждённые контакты из бота. Можно привязать к карточке или отвязать." %}
+{% block main %}
+{% include "_company_subhead.html" %}
+
+{% if error %}
+<div class="mb-8 rounded-xl border border-amber-500/35 bg-amber-500/[0.09] px-4 py-3 text-sm text-amber-100/95">{{ error }}</div>
+{% endif %}
+
+<section class="mb-12">
+  <h2 class="text-xs uppercase tracking-[0.18em] text-ink-500 font-medium mb-4 flex items-center gap-2">
+    <span class="text-accent">{{ icon.users() }}</span> В карточке
+  </h2>
+  {% if hr_list %}
+  <div class="space-y-4">
+    {% for h in hr_list %}
+    <div class="rounded-2xl border border-ink-500/65 bg-ink-800/25 p-5 md:p-6 ring-1 ring-white/[0.02] shadow-soft">
+      {% if h.summary %}
+      <p class="text-ink-100 text-sm leading-relaxed whitespace-pre-wrap">{{ h.summary }}</p>
+      {% endif %}
+      <dl class="mt-3 text-xs text-ink-400 space-y-1.5 grid gap-1">
+        {% if h.role_hint %}<div><span class="text-ink-500">Роль</span> · {{ h.role_hint }}</div>{% endif %}
+        {% if h.vacancies_hint %}<div><span class="text-ink-500">Вакансии</span> · {{ h.vacancies_hint }}</div>{% endif %}
+        {% if h.company %}<div><span class="text-ink-500">Компания в карточке HR</span> · {{ h.company }}</div>{% endif %}
+        <div class="text-ink-300 pt-1"><span class="text-ink-500">Контакт</span> · {{ h.contact_ref }}</div>
+      </dl>
+      <form method="post" action="/companies/{{ company.slug }}/unlink-hr" class="mt-4 pt-4 border-t border-ink-600/60">
+        <input type="hidden" name="hr_contact_id" value="{{ h.id }}">
+        <button type="submit" class="text-sm text-ink-400 hover:text-rose-300 transition-colors font-medium">Отвязать от компании</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="rounded-2xl border border-dashed border-ink-600 bg-ink-800/15 px-6 py-10 text-center text-sm text-ink-400">
+    Пока никого не привязали.
+  </div>
+  {% endif %}
+
+  <div class="mt-8 rounded-2xl border border-ink-500/70 bg-ink-800/20 p-5 md:p-6 shadow-soft">
+    <h3 class="text-sm font-semibold text-ink-100 mb-4">Привязать контакт</h3>
+    <form method="post" action="/companies/{{ company.slug }}/link-hr" class="flex flex-col lg:flex-row gap-4 lg:items-end">
+      <div class="flex-1 min-w-0">
+        <label class="block text-xs text-ink-500 mb-2">Выбор из списка</label>
+        <select name="hr_contact_id" class="field rounded-xl py-2.5 px-3 text-sm bg-ink-900/70 border-ink-600 w-full">
+          <option value="">— выбери контакт —</option>
+          {% for o in hr_picker %}
+          <option value="{{ o.id }}">#{{ o.id }} {% if o.company %}· {{ o.company[:40] }}{% endif %} · {{ o.contact_ref }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary rounded-xl px-5 py-2.5 font-semibold shrink-0">Добавить</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% set section = "Собесы" %}
+{% set page_title = "Отзывы о собесах" %}
+{% set page_subtitle = "Заметки участников и записи из бота. Можно связать отзыв с контактом HR." %}
+{% block main %}
+{% include "_company_subhead.html" %}
+
+{% if error %}
+<div class="mb-8 rounded-xl border border-amber-500/35 bg-amber-500/[0.09] px-4 py-3 text-sm text-amber-100/95">{{ error }}</div>
+{% endif %}
+
+<section class="mb-12">
+  <h2 class="text-xs uppercase tracking-[0.18em] text-ink-500 font-medium mb-4 flex items-center gap-2">
+    <span class="text-accent-2">{{ icon.book() }}</span> Лента отзывов
+  </h2>
+  {% if reviews %}
+  <div class="space-y-4">
+    {% for r in reviews %}
+    <article class="rounded-2xl border border-ink-500/65 bg-ink-800/25 p-5 md:p-6 ring-1 ring-white/[0.02] shadow-soft">
+      <p class="text-ink-100 text-sm leading-relaxed whitespace-pre-wrap">{{ r.body }}</p>
+      {% if r.hr_contact_id and (r.hr_summary or r.hr_role or r.hr_contact_ref) %}
+      <div class="mt-4 pl-4 border-l-2 border-accent/45 bg-ink-900/30 rounded-r-lg py-3 pr-3 text-xs text-ink-300 space-y-1.5">
+        <div class="font-semibold text-ink-200 text-[13px]">Связанный HR</div>
+        {% if r.hr_summary %}<p class="whitespace-pre-wrap leading-relaxed">{{ r.hr_summary }}</p>{% endif %}
+        {% if r.hr_role %}<div>Роль: {{ r.hr_role }}</div>{% endif %}
+        {% if r.hr_contact_ref %}<div>Контакт: {{ r.hr_contact_ref }}</div>{% endif %}
+      </div>
+      {% endif %}
+      <div class="mt-3 text-xs text-ink-500 num">Автор {{ r.author_telegram_id }} · {{ r.created_at | dt_short }}</div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="rounded-2xl border border-dashed border-ink-600 bg-ink-800/15 px-6 py-10 text-center text-sm text-ink-400 mb-8">
+    Отзывов пока нет.
+  </div>
+  {% endif %}
+
+  <div class="mt-8 rounded-2xl border border-ink-500/70 bg-ink-800/20 p-5 md:p-6 max-w-2xl shadow-soft">
+    <h3 class="text-sm font-semibold text-ink-100 mb-4">Новый отзыв</h3>
+    <form method="post" action="/companies/{{ company.slug }}/review" class="space-y-4">
+      <div>
+        <label class="block text-xs text-ink-500 mb-2">Текст</label>
+        <textarea name="body" rows="5" class="field rounded-xl py-3 px-4 text-sm bg-ink-900/70 border-ink-600 w-full min-h-[7rem]" placeholder="Минимум 10 символов, если не выбран HR из списка"></textarea>
+      </div>
+      <div>
+        <label class="block text-xs text-ink-500 mb-2">Упомянуть HR <span class="text-ink-600">(необязательно)</span></label>
+        <select name="hr_contact_id" class="field rounded-xl py-2.5 px-3 text-sm bg-ink-900/70 border-ink-600 w-full">
+          <option value="">— нет —</option>
+          {% for o in hr_picker %}
+          <option value="{{ o.id }}">#{{ o.id }} {{ o.contact_ref }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary rounded-xl px-5 py-2.5 font-semibold">Опубликовать</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

@@ -10,7 +10,7 @@ from telegram.ext import ContextTypes
 
 from bot.keyboards import main_menu
 from db import repo
-from services import activity, events_service, files_service, hr_service, interviews_store
+from services import activity, company_sync, events_service, files_service, hr_service, interview_service, interviews_store
 from services.google_sheets_hr import append_hr_contact_row
 from utils.telegram_user import user_display_handle
 
@@ -95,6 +95,97 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             pass
         return
 
+    if data in ("ivok", "ived"):
+        state, pl = await repo.get_session(pool, user.id)
+        if state != "interview_confirm":
+            await query.answer("Это сообщение уже не актуально.", show_alert=True)
+            return
+        pending = pl.get("interview_pending")
+        if not pending or not isinstance(pending, dict):
+            await query.answer("Нет данных", show_alert=True)
+            return
+        wl = await repo.is_whitelist(pool, user.id)
+        if data == "ived":
+            await query.answer("Ок")
+            lines = list(pending.get("lines") or [])
+            had_voice = bool(pending.get("had_voice"))
+            await repo.set_session(
+                pool,
+                user.id,
+                "interview_tell",
+                {"interview_lines": lines, "interview_had_voice": had_voice},
+            )
+            try:
+                await query.edit_message_text(
+                    "Ок — дополни рассказ и снова нажми «Готово, сохранить»."
+                )
+            except Exception:
+                pass
+            return
+        await query.answer("Сохраняю…")
+        _, reply_txt = await interview_service.commit_interview_pending(
+            pool, user, pending, bot=context.bot
+        )
+        await repo.clear_session(pool, user.id)
+        try:
+            await query.edit_message_text("Сохранено.")
+        except Exception:
+            pass
+        await context.bot.send_message(
+            chat_id=user.id, text=reply_txt, reply_markup=main_menu(wl)
+        )
+        return
+
+    if data.startswith("fco:"):
+        parts = data.split(":", 2)
+        if len(parts) != 3:
+            await query.answer("Ошибка кнопки", show_alert=True)
+            return
+        fid = int(parts[1])
+        cid = int(parts[2])
+        frow = await repo.get_file_record(pool, fid)
+        if not frow or int(frow["uploaded_by"]) != user.id:
+            await query.answer("Нет доступа", show_alert=True)
+            return
+        if str(frow["status"]) != "confirmed":
+            await query.answer("Файл ещё не в библиотеке", show_alert=True)
+            return
+        res = await repo.link_company_file(pool, cid, fid, user.id, None)
+        await query.answer("Закреплено за компанией" if res == "ok" else "Не получилось")
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        if res == "ok":
+            try:
+                await context.bot.send_message(chat_id=user.id, text="Файл привязан к карточке компании на сайте.")
+            except Exception:
+                log.exception("notify file company link")
+        elif res == "duplicate":
+            try:
+                await context.bot.send_message(chat_id=user.id, text="Этот файл уже был привязан к этой компании.")
+            except Exception:
+                log.exception("notify duplicate company file")
+        return
+
+    if data.startswith("fcs:"):
+        fid = int(data.split(":", 1)[1])
+        frow = await repo.get_file_record(pool, fid)
+        if not frow or int(frow["uploaded_by"]) != user.id:
+            await query.answer("Нет доступа", show_alert=True)
+            return
+        await query.answer("Ок")
+        try:
+            await query.edit_message_text(
+                "Файл в библиотеке. Закрепление к компании пропущено — при желании сделай это на сайте."
+            )
+        except Exception:
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+        return
+
     await query.answer()
 
     if data.startswith("hry:"):
@@ -142,6 +233,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
         else:
             done = f"Сохранено в базу. Google Sheets не настроен (нет GOOGLE_SHEET_ID или пути к ключу).{pts_note}"
+        try:
+            site_line = await company_sync.link_confirmed_hr_to_company_line(pool, hr_id, user.id)
+            if site_line:
+                done = f"{done}\n\n{site_line}"
+        except Exception:
+            log.exception("link_confirmed_hr_to_company_line")
         await query.edit_message_text(done)
         return
 
@@ -202,6 +299,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
         if ok:
             await query.edit_message_text(f"Файл в папке «{label}» ({slug}).")
+            try:
+                ch = query.message.chat_id if query.message else user.id
+                await company_sync.offer_file_company_link(context.bot, pool, ch, fid)
+            except Exception:
+                log.exception("offer_file_company_link fiy")
         else:
             await query.edit_message_text("Не удалось переместить файл.")
         return
@@ -249,6 +351,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
         if ok:
             await query.edit_message_text(f"Файл в папке «{label}» ({slug}).")
+            try:
+                ch = query.message.chat_id if query.message else user.id
+                await company_sync.offer_file_company_link(context.bot, pool, ch, fid)
+            except Exception:
+                log.exception("offer_file_company_link fic")
         else:
             await query.edit_message_text("Не удалось сохранить.")
         return

@@ -1,4 +1,4 @@
-from telegram import KeyboardButton, ReplyKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 from utils import nav_labels as N
 
@@ -41,3 +41,22 @@ def interview_tell_keyboard() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
     )
+
+
+def interview_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Подтвердить", callback_data="ivok")],
+            [InlineKeyboardButton("Править текст", callback_data="ived")],
+        ]
+    )
+
+
+def company_file_link_keyboard(file_id: int, companies: list) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for c in companies[:20]:
+        label = str(c["name"])[:38]
+        cid = int(c["id"])
+        rows.append([InlineKeyboardButton(label, callback_data=f"fco:{file_id}:{cid}")])
+    rows.append([InlineKeyboardButton("Пропустить", callback_data=f"fcs:{file_id}")])
+    return InlineKeyboardMarkup(rows)

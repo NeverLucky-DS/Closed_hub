@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% block main %}
+<div class="relative">
+  <div class="absolute -inset-x-4 -top-6 h-72 bg-gradient-to-b from-accent/8 via-transparent to-transparent rounded-[2rem] pointer-events-none opacity-90"></div>
+
+  <nav class="relative flex flex-wrap items-center gap-2 text-sm text-ink-400 mb-6">
+    <a href="/companies" class="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 -ml-2 hover:text-accent hover:bg-ink-800/80 transition-colors">
+      <span class="text-ink-500">{{ icon.arrow_left() }}</span>
+      Все компании
+    </a>
+  </nav>
+
+  {% set thumb = company | company_thumb %}
+  {% set cov = company | company_cover_class %}
+  <header class="relative rounded-2xl overflow-hidden border border-ink-500/60 shadow-soft mb-8 ring-1 ring-white/[0.04]">
+    <div class="h-48 md:h-60 relative">
+      {% if thumb %}
+      <img src="{{ thumb }}" alt="" class="absolute inset-0 w-full h-full object-cover scale-105" width="1200" height="480">
+      <div class="absolute inset-0 bg-gradient-to-t from-ink-900 via-ink-900/65 to-ink-900/20"></div>
+      <div class="absolute inset-0 bg-gradient-to-r from-ink-900/80 via-transparent to-transparent"></div>
+      {% else %}
+      <div class="cover-bg {{ cov }} absolute inset-0"></div>
+      <div class="absolute inset-0 bg-ink-900/25"></div>
+      {% endif %}
+      <div class="absolute inset-0 flex flex-col justify-end p-6 md:p-10">
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+          <div class="min-w-0">
+            <h1 class="text-2xl md:text-4xl font-semibold tracking-tight text-white drop-shadow-md">{{ company.name }}</h1>
+            {% if company.description %}
+            <p class="mt-3 text-sm md:text-[15px] text-white/88 max-w-2xl leading-relaxed whitespace-pre-wrap">{{ company.description }}</p>
+            {% endif %}
+          </div>
+          {% if not thumb %}
+          <div class="flex w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-white/12 backdrop-blur-md border border-white/25 items-center justify-center text-xl font-semibold text-white shrink-0 shadow-soft">
+            {{ (company.name[:1] if company.name else '?') | upper }}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </header>
+
+  {% if error %}
+  <div class="mb-6 rounded-xl border border-amber-500/35 bg-amber-500/[0.09] px-4 py-3 text-sm text-amber-100/95 leading-relaxed">{{ error }}</div>
+  {% endif %}
+
+  {% if can_manage_company %}
+  <section class="mb-8 rounded-2xl border border-ink-500/70 bg-ink-800/35 backdrop-blur-sm p-5 md:p-6 shadow-soft">
+    <div class="flex items-start gap-3 mb-4">
+      <div class="w-10 h-10 rounded-xl bg-accent/12 ring-1 ring-accent/25 flex items-center justify-center text-accent shrink-0">
+        {{ icon.file_image() }}
+      </div>
+      <div>
+        <h2 class="text-base font-semibold text-ink-100 tracking-tight">Обложка</h2>
+        <p class="text-sm text-ink-400 mt-0.5">JPEG, PNG или WebP до {{ hub_settings.web_max_profile_photo_mb }} МБ. Новое фото заменит текущее.</p>
+      </div>
+    </div>
+    <form method="post" action="/companies/{{ company.slug }}/photo" enctype="multipart/form-data" class="flex flex-col sm:flex-row flex-wrap gap-3 sm:items-end">
+      <label class="flex-1 min-w-[12rem] cursor-pointer">
+        <span class="sr-only">Файл изображения</span>
+        <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required
+               class="block w-full text-sm text-ink-300 file:cursor-pointer file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:bg-ink-700 file:text-ink-100 file:font-medium file:ring-1 file:ring-ink-500 hover:file:bg-ink-600 transition-colors">
+      </label>
+      <button type="submit" class="btn btn-primary px-5 py-2.5 rounded-xl font-semibold">Закрепить фото</button>
+    </form>
+    {% set gallery = company.photo_paths | valid_photos %}
+    {% if gallery %}
+    <form method="post" action="/companies/{{ company.slug }}/photo-clear" class="mt-4 pt-4 border-t border-ink-600/80"
+          onsubmit="return confirm('Убрать обложку? Файл на диске будет удалён.');">
+      <button type="submit" class="btn btn-ghost text-rose-300/95 hover:text-rose-200 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/25 rounded-xl text-sm py-2 px-3">
+        {{ icon.trash() }} Убрать обложку
+      </button>
+    </form>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <p class="text-xs uppercase tracking-[0.2em] text-ink-500 font-medium mb-4">Разделы карточки</p>
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
+    <a href="/companies/{{ company.slug }}/hr" class="group relative rounded-2xl p-[1px] bg-gradient-to-br from-white/[0.12] via-ink-600 to-ink-700 hover:from-accent/45 hover:via-accent/15 hover:to-ink-700 transition-all duration-300 shadow-soft">
+      <div class="rounded-[15px] bg-ink-800/98 backdrop-blur-sm p-6 h-full flex flex-col gap-3 min-h-[9.5rem] ring-1 ring-ink-600/60 group-hover:ring-accent/35 transition-all">
+        <div class="w-11 h-11 rounded-xl bg-accent/12 flex items-center justify-center text-accent ring-1 ring-accent/20 group-hover:scale-105 transition-transform">
+          {{ icon.users() }}
+        </div>
+        <span class="font-semibold text-ink-50 group-hover:text-white tracking-tight text-lg">HR</span>
+        <span class="text-sm text-ink-400 leading-snug">Контакты из бота, привязка к компании</span>
+        <span class="text-xs text-ink-500 mt-auto font-medium num">{{ tabs.hr_n }} в карточке</span>
+      </div>
+    </a>
+    <a href="/companies/{{ company.slug }}/interviews" class="group relative rounded-2xl p-[1px] bg-gradient-to-br from-white/[0.12] via-ink-600 to-ink-700 hover:from-accent-2/35 hover:via-accent/10 hover:to-ink-700 transition-all duration-300 shadow-soft">
+      <div class="rounded-[15px] bg-ink-800/98 backdrop-blur-sm p-6 h-full flex flex-col gap-3 min-h-[9.5rem] ring-1 ring-ink-600/60 group-hover:ring-accent-2/30 transition-all">
+        <div class="w-11 h-11 rounded-xl bg-accent-2/12 flex items-center justify-center text-accent-2 ring-1 ring-accent-2/25 group-hover:scale-105 transition-transform">
+          {{ icon.book() }}
+        </div>
+        <span class="font-semibold text-ink-50 group-hover:text-white tracking-tight text-lg">Собесы</span>
+        <span class="text-sm text-ink-400 leading-snug">Отзывы о собеседованиях, в том числе из Telegram</span>
+        <span class="text-xs text-ink-500 mt-auto font-medium num">{{ tabs.reviews_n }} записей</span>
+      </div>
+    </a>
+    <a href="/companies/{{ company.slug }}/files" class="group relative rounded-2xl p-[1px] bg-gradient-to-br from-white/[0.12] via-ink-600 to-ink-700 hover:from-sky-400/25 hover:via-accent/10 hover:to-ink-700 transition-all duration-300 shadow-soft">
+      <div class="rounded-[15px] bg-ink-800/98 backdrop-blur-sm p-6 h-full flex flex-col gap-3 min-h-[9.5rem] ring-1 ring-ink-600/60 group-hover:ring-sky-400/25 transition-all">
+        <div class="w-11 h-11 rounded-xl bg-sky-400/10 flex items-center justify-center text-sky-300 ring-1 ring-sky-400/20 group-hover:scale-105 transition-transform">
+          {{ icon.folder() }}
+        </div>
+        <span class="font-semibold text-ink-50 group-hover:text-white tracking-tight text-lg">Файлы</span>
+        <span class="text-sm text-ink-400 leading-snug">Материалы из библиотеки хаба</span>
+        <span class="text-xs text-ink-500 mt-auto font-medium num">{{ tabs.files_n }} файлов</span>
+      </div>
+    </a>
+  </div>
+
+  {% if show_delete %}
+  <section class="rounded-2xl border border-rose-500/20 bg-rose-500/[0.06] p-5 md:p-6">
+    <h2 class="text-sm font-semibold text-rose-200/90 tracking-tight">Опасная зона</h2>
+    <p class="text-sm text-ink-400 mt-1.5 max-w-xl leading-relaxed">Удаление компании необратимо: отзывы и файлы пропадут, HR отвяжутся.</p>
+    <form method="post" action="/companies/{{ company.slug }}/delete" class="mt-4"
+          onsubmit="return confirm('Удалить компанию «{{ company.name }}»?');">
+      <button type="submit" class="btn border-rose-500/35 bg-rose-500/10 text-rose-200 hover:bg-rose-500/15 hover:border-rose-400/45 rounded-xl px-4 py-2.5 text-sm font-medium inline-flex items-center gap-2">
+        {{ icon.trash() }} Удалить компанию
+      </button>
+    </form>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

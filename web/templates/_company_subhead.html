@@ -1,0 +1,32 @@
+{# Перед include задайте: section, page_title; опционально page_subtitle. В контексте нужен company. #}
+{% import "_icons.html" as icon %}
+<nav aria-label="Навигация по компании" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-400 mb-6">
+  <a href="/companies" class="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 -ml-2 hover:text-accent hover:bg-ink-800/80 transition-colors">
+    <span class="text-ink-500">{{ icon.arrow_left() }}</span>
+    Компании
+  </a>
+  <span class="text-ink-600 select-none">/</span>
+  <a href="/companies/{{ company.slug }}" class="hover:text-accent transition-colors truncate max-w-[12rem] sm:max-w-xs">{{ company.name }}</a>
+  <span class="text-ink-600 select-none">/</span>
+  <span class="text-ink-200 font-medium">{{ section }}</span>
+</nav>
+<div class="flex flex-col sm:flex-row sm:items-center gap-5 mb-10">
+  <div class="flex items-center gap-4 min-w-0">
+    <div class="w-14 h-14 sm:w-[4.5rem] sm:h-[4.5rem] rounded-2xl overflow-hidden ring-1 ring-ink-500/80 shadow-glow shrink-0 bg-ink-800">
+      {% set t = company | company_thumb %}
+      {% if t %}
+      <img src="{{ t }}" alt="" class="w-full h-full object-cover" width="72" height="72">
+      {% else %}
+      {% set cov = company | company_cover_class %}
+      <div class="cover-bg {{ cov }} w-full h-full flex items-center justify-center text-xl font-semibold text-white tracking-tight">{{ (company.name[:1] if company.name else '?') | upper }}</div>
+      {% endif %}
+    </div>
+    <div class="min-w-0">
+      <p class="text-[11px] uppercase tracking-[0.18em] text-ink-500 font-medium">{{ company.name }}</p>
+      <h1 class="text-2xl md:text-3xl font-semibold tracking-tight text-ink-100 mt-0.5">{{ page_title }}</h1>
+      {% if page_subtitle is defined and page_subtitle %}
+      <p class="mt-1.5 text-sm text-ink-400 max-w-2xl leading-relaxed">{{ page_subtitle }}</p>
+      {% endif %}
+    </div>
+  </div>
+</div>

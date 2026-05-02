@@ -51,6 +51,11 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     st_iv, _ = await repo.get_session(pool, uid)
+    if st_iv == "interview_confirm":
+        await msg.reply_text(
+            "Сначала нажми «Подтвердить» или «Править текст» под сообщением с проверкой."
+        )
+        return
     if st_iv == "interview_hub":
         await msg.reply_text(
             f"В этом шаге удобнее кнопки: «{N.BTN_READ_INTERVIEWS}» или «{N.BTN_SHARE_INTERVIEW}».",
@@ -81,6 +86,7 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         lines = list(pl.get("interview_lines") or [])
         lines.append(transcript.strip())
         pl["interview_lines"] = lines
+        pl["interview_had_voice"] = True
         await repo.set_session(pool, uid, "interview_tell", pl)
         await msg.reply_text(
             f"Добавил фрагмент из голосового. Продолжай или нажми «{N.BTN_STORY_DONE}».",

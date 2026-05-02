@@ -5,8 +5,10 @@ import hmac
 import json
 import logging
 import secrets
+import shutil
 import time
 import uuid
+from urllib.parse import quote_plus
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -26,7 +28,9 @@ from config import get_settings
 from db import repo
 from db.pool import close_pool, create_pool
 from db.schema_patch import apply_pending_patches
-from services.file_storage import library_root, profile_root
+from services.file_storage import company_root, library_root, profile_root
+from services import interviews_store
+from utils.company_slug import slugify_company_name
 
 log = logging.getLogger(__name__)
 
@@ -195,6 +199,89 @@ def _valid_photo_paths(raw: Any) -> list[str]:
     return out[:5]
 
 
+def _company_thumb_url(rec: Any) -> str:
+    cid = int(rec["id"])
+    paths = _valid_photo_paths(rec.get("photo_paths"))
+    if paths:
+        fn = str(paths[0]).strip().replace("\\", "/").split("/")[-1]
+        if fn:
+            return f"/media/company/{cid}/{fn}"
+    return ""
+
+
+async def _pick_unique_company_slug(pool, name: str) -> str:
+    base = slugify_company_name(name)
+    for i in range(0, 500):
+        slug = base if i == 0 else f"{base}-{i}"
+        if not await repo.company_slug_taken(pool, slug):
+            return slug
+    return f"{base}-{secrets.token_hex(4)}"
+
+
+async def _prepare_company_photo_blobs(
+    photos: list[UploadFile],
+) -> tuple[list[tuple[bytes, str]], str | None]:
+    nonempty = [p for p in photos if p.filename]
+    if not nonempty:
+        return [], None
+    if len(nonempty) > 5:
+        return [], "Не больше пяти фотографий."
+    settings = get_settings()
+    max_b = settings.web_max_profile_photo_mb * 1024 * 1024
+    allowed_mime = {"image/jpeg", "image/png", "image/webp"}
+    out: list[tuple[bytes, str]] = []
+    for up in nonempty:
+        raw = await up.read()
+        if len(raw) > max_b:
+            return [], f"Файл слишком большой (макс. {settings.web_max_profile_photo_mb} МБ)"
+        ct = (up.content_type or "").split(";")[0].strip().lower()
+        if ct not in allowed_mime:
+            return [], "Только JPEG, PNG или WebP для фото компании"
+        if ct == "image/jpeg":
+            ext = "jpg"
+        elif ct == "image/png":
+            ext = "png"
+        else:
+            ext = "webp"
+        out.append((raw, ext))
+    return out, None
+
+
+def _write_company_photos(company_id: int, blobs: list[tuple[bytes, str]]) -> list[str]:
+    if not blobs:
+        return []
+    dest_root = company_root() / str(company_id)
+    dest_root.mkdir(parents=True, exist_ok=True)
+    rel_paths: list[str] = []
+    for raw, ext in blobs:
+        fn = f"{uuid.uuid4().hex}.{ext}"
+        (dest_root / fn).write_bytes(raw)
+        rel_paths.append(f"{company_id}/{fn}")
+    return rel_paths
+
+
+def _cleanup_company_photos_disk(company_id: int, keep_paths: list[str]) -> None:
+    root = company_root() / str(company_id)
+    if not root.is_dir():
+        return
+    keep = {str(p).strip().replace("\\", "/") for p in keep_paths}
+    for f in root.iterdir():
+        if not f.is_file():
+            continue
+        rel = f"{company_id}/{f.name}"
+        if rel not in keep:
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+
+def _company_cover_class(rec: Any) -> str:
+    key = str(rec.get("name") or rec.get("slug") or "x")
+    n = hashlib.md5(key.encode()).digest()[0] % 6 + 1
+    return f"cover-{n}"
+
+
 def _ru_plural(n: int, forms: tuple[str, str, str]) -> str:
     n_abs = abs(int(n))
     mod10 = n_abs % 10
@@ -249,6 +336,8 @@ _templates.env.filters["event_thumb"] = _event_thumb_url
 _templates.env.filters["ru_plural"] = _ru_plural
 _templates.env.filters["event_badges"] = _event_badges
 _templates.env.filters["valid_photos"] = _valid_photo_paths
+_templates.env.filters["company_thumb"] = lambda r: _company_thumb_url(r)
+_templates.env.filters["company_cover_class"] = _company_cover_class
 _templates.env.globals["hub_settings"] = get_settings()
 
 
@@ -307,6 +396,7 @@ async def lifespan(app: FastAPI):
     await apply_pending_patches(pool)
     app.state.pool = pool
     profile_root().mkdir(parents=True, exist_ok=True)
+    company_root().mkdir(parents=True, exist_ok=True)
     yield
     await close_pool(pool)
 
@@ -583,6 +673,31 @@ async def profile_media(
     return FileResponse(full)
 
 
+@app.get("/media/company/{company_id}/{filename}")
+async def company_media(
+    company_id: int,
+    filename: str,
+    pool=Depends(pool_dep),
+    _uid: int = Depends(require_uid_api),
+):
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=404)
+    row = await repo.get_company_by_id(pool, company_id)
+    if not row:
+        raise HTTPException(status_code=404)
+    paths = _valid_photo_paths(row.get("photo_paths"))
+    rel = f"{company_id}/{filename}"
+    ok = any(str(p).replace("\\", "/") == rel for p in paths)
+    if not ok:
+        raise HTTPException(status_code=404)
+    root = company_root().resolve()
+    full = _safe_under(root, rel)
+    if not full or not full.is_file():
+        raise HTTPException(status_code=404)
+    mime, _ = mimetypes.guess_type(str(full))
+    return FileResponse(full, media_type=mime or "image/jpeg")
+
+
 @app.get("/api/profile/{telegram_user_id}/resume")
 async def profile_resume_download(
     telegram_user_id: int,
@@ -742,6 +857,8 @@ async def page_library(
         selected = next((f for f in files if int(f["id"]) == int(file)), None)
     if selected is None and files:
         selected = files[0]
+    companies_attach = await repo.list_companies_compact(pool, 100)
+    attach_err = request.query_params.get("attach_err")
     return _templates.TemplateResponse(
         request,
         "library.html",
@@ -756,9 +873,51 @@ async def page_library(
             "files": files,
             "selected": selected,
             "is_admin": is_web_admin(uid),
+            "companies_for_attach": companies_attach,
+            "attach_err": attach_err,
         },
         headers=_no_store_headers(),
     )
+
+
+@app.post("/library/attach-company")
+async def library_attach_company(
+    request: Request,
+    pool=Depends(pool_dep),
+    cat: str = Form(""),
+    file_id: str = Form(""),
+    company_id: str = Form(""),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    try:
+        fid = int((file_id or "").strip())
+        cid = int((company_id or "").strip())
+    except ValueError:
+        q = f"cat={cat}&file={file_id}&attach_err=bad_params" if cat else "attach_err=bad_params"
+        return RedirectResponse(f"/library?{q}", status_code=303)
+    frow = await repo.get_file_record(pool, fid)
+    if not frow or int(frow["uploaded_by"]) != uid:
+        return RedirectResponse(
+            f"/library?cat={cat}&file={fid}&attach_err=forbidden",
+            status_code=303,
+        )
+    res = await repo.link_company_file(pool, cid, fid, uid, None)
+    err_map = {
+        "bad_file": "not_file",
+        "duplicate": "dup",
+        "missing_company": "no_company",
+        "ok": "",
+    }
+    suf = err_map.get(res, "fail")
+    redir = f"/library?cat={cat}&file={fid}" if cat else "/library"
+    if suf:
+        redir += f"&attach_err={suf}"
+    return RedirectResponse(redir, status_code=303)
 
 
 @app.get("/feed", response_class=HTMLResponse)
@@ -1042,6 +1201,468 @@ async def page_today(request: Request, pool=Depends(pool_dep)):
         },
         headers=_no_store_headers(),
     )
+
+
+@app.get("/companies", response_class=HTMLResponse)
+async def page_companies(request: Request, pool=Depends(pool_dep)):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    rows = await repo.list_companies_with_counts(pool)
+    return _templates.TemplateResponse(
+        request,
+        "companies.html",
+        {
+            "title": "Компании",
+            "nav": "companies",
+            "uid": uid,
+            "companies": rows,
+        },
+        headers=_no_store_headers(),
+    )
+
+
+@app.get("/companies/new", response_class=HTMLResponse)
+async def page_company_new_get(request: Request, pool=Depends(pool_dep)):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    return _templates.TemplateResponse(
+        request,
+        "company_new.html",
+        {"title": "Новая компания", "nav": "companies", "uid": uid, "error": None},
+        headers=_no_store_headers(),
+    )
+
+
+@app.post("/companies/new")
+async def page_company_new_post(
+    request: Request,
+    pool=Depends(pool_dep),
+    name: str = Form(""),
+    description: str = Form(""),
+    photo: UploadFile | None = File(None),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+
+    n = name.strip()
+    if len(n) < 2 or len(n) > 200:
+        return _templates.TemplateResponse(
+            request,
+            "company_new.html",
+            {
+                "title": "Новая компания",
+                "nav": "companies",
+                "uid": uid,
+                "error": "Название: от 2 до 200 символов.",
+            },
+            status_code=400,
+            headers=_no_store_headers(),
+        )
+    desc = (description or "").strip()
+    if len(desc) > 8000:
+        return _templates.TemplateResponse(
+            request,
+            "company_new.html",
+            {
+                "title": "Новая компания",
+                "nav": "companies",
+                "uid": uid,
+                "error": "Описание слишком длинное.",
+            },
+            status_code=400,
+            headers=_no_store_headers(),
+        )
+
+    photos_in = [photo] if (photo and photo.filename) else []
+    blobs, err = await _prepare_company_photo_blobs(photos_in)
+    if err:
+        return _templates.TemplateResponse(
+            request,
+            "company_new.html",
+            {
+                "title": "Новая компания",
+                "nav": "companies",
+                "uid": uid,
+                "error": err,
+            },
+            status_code=400,
+            headers=_no_store_headers(),
+        )
+    slug = await _pick_unique_company_slug(pool, n)
+    cid = await repo.insert_company(pool, slug, n, desc or None, uid, [])
+    rel_paths = _write_company_photos(cid, blobs)
+    if rel_paths:
+        await repo.update_company_photo_paths(pool, cid, rel_paths)
+    return RedirectResponse(f"/companies/{slug}", status_code=303)
+
+
+@app.get("/companies/{slug}", response_class=HTMLResponse)
+async def page_company_hub(slug: str, request: Request, pool=Depends(pool_dep)):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    company = await repo.get_company_by_slug(pool, slug)
+    if not company:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    tabs = await repo.get_company_tab_counts(pool, int(company["id"]))
+    err = request.query_params.get("err")
+    adm = is_web_admin(uid)
+    show_delete = int(company["created_by"]) == uid or adm
+    can_manage_company = show_delete
+    return _templates.TemplateResponse(
+        request,
+        "company_hub.html",
+        {
+            "title": company["name"],
+            "nav": "companies",
+            "uid": uid,
+            "company": company,
+            "tabs": tabs,
+            "error": err,
+            "show_delete": show_delete,
+            "is_admin": adm,
+            "can_manage_company": can_manage_company,
+        },
+        headers=_no_store_headers(),
+    )
+
+
+@app.post("/companies/{slug}/photo")
+async def company_photo_post(
+    slug: str,
+    request: Request,
+    pool=Depends(pool_dep),
+    photo: UploadFile | None = File(None),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    company = await repo.get_company_by_slug(pool, slug)
+    if not company:
+        raise HTTPException(status_code=404)
+    if int(company["created_by"]) != uid and not is_web_admin(uid):
+        raise HTTPException(status_code=403, detail="Только автор карточки или админ")
+    if not photo or not photo.filename:
+        return RedirectResponse(
+            f"/companies/{slug}?err={quote_plus('Выбери файл изображения')}",
+            status_code=303,
+        )
+    blobs, err = await _prepare_company_photo_blobs([photo])
+    if err:
+        return RedirectResponse(
+            f"/companies/{slug}?err={quote_plus(err)}",
+            status_code=303,
+        )
+    cid = int(company["id"])
+    new_paths = _write_company_photos(cid, blobs)
+    _cleanup_company_photos_disk(cid, new_paths)
+    await repo.update_company_photo_paths(pool, cid, new_paths)
+    return RedirectResponse(f"/companies/{slug}", status_code=303)
+
+
+@app.post("/companies/{slug}/photo-clear")
+async def company_photo_clear_post(slug: str, request: Request, pool=Depends(pool_dep)):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    company = await repo.get_company_by_slug(pool, slug)
+    if not company:
+        raise HTTPException(status_code=404)
+    if int(company["created_by"]) != uid and not is_web_admin(uid):
+        raise HTTPException(status_code=403)
+    cid = int(company["id"])
+    _cleanup_company_photos_disk(cid, [])
+    await repo.update_company_photo_paths(pool, cid, [])
+    return RedirectResponse(f"/companies/{slug}", status_code=303)
+
+
+@app.post("/companies/{slug}/delete")
+async def company_delete_post(slug: str, request: Request, pool=Depends(pool_dep)):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    company = await repo.get_company_by_slug(pool, slug)
+    if not company:
+        raise HTTPException(status_code=404)
+    cid = int(company["id"])
+    if int(company["created_by"]) != uid and not is_web_admin(uid):
+        raise HTTPException(status_code=403, detail="Удалить может автор карточки или админ")
+    ok = await repo.delete_company(pool, cid)
+    if ok:
+        media = company_root() / str(cid)
+        if media.is_dir():
+            shutil.rmtree(media, ignore_errors=True)
+    return RedirectResponse("/companies", status_code=303)
+
+
+@app.get("/companies/{slug}/hr", response_class=HTMLResponse)
+async def page_company_hr(slug: str, request: Request, pool=Depends(pool_dep)):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    company = await repo.get_company_by_slug(pool, slug)
+    if not company:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    cid = int(company["id"])
+    err = request.query_params.get("err")
+    return _templates.TemplateResponse(
+        request,
+        "company_hr.html",
+        {
+            "title": f"{company['name']} — HR",
+            "nav": "companies",
+            "uid": uid,
+            "company": company,
+            "hr_list": await repo.list_hr_for_company(pool, cid),
+            "hr_picker": await repo.list_hr_contacts_for_company_picker(pool, cid),
+            "error": err,
+        },
+        headers=_no_store_headers(),
+    )
+
+
+@app.get("/companies/{slug}/interviews", response_class=HTMLResponse)
+async def page_company_interviews(slug: str, request: Request, pool=Depends(pool_dep)):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    company = await repo.get_company_by_slug(pool, slug)
+    if not company:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    cid = int(company["id"])
+    err = request.query_params.get("err")
+    return _templates.TemplateResponse(
+        request,
+        "company_interviews.html",
+        {
+            "title": f"{company['name']} — Собесы",
+            "nav": "companies",
+            "uid": uid,
+            "company": company,
+            "reviews": await repo.list_company_interview_reviews(pool, cid),
+            "hr_picker": await repo.list_hr_contacts_for_company_picker(pool, cid),
+            "error": err,
+        },
+        headers=_no_store_headers(),
+    )
+
+
+@app.get("/companies/{slug}/files", response_class=HTMLResponse)
+async def page_company_files(slug: str, request: Request, pool=Depends(pool_dep)):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    company = await repo.get_company_by_slug(pool, slug)
+    if not company:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    cid = int(company["id"])
+    err = request.query_params.get("err")
+    return _templates.TemplateResponse(
+        request,
+        "company_files.html",
+        {
+            "title": f"{company['name']} — Файлы",
+            "nav": "companies",
+            "uid": uid,
+            "company": company,
+            "file_links": await repo.list_company_files_with_meta(pool, cid),
+            "recent_files": await repo.list_recent_confirmed_files_for_uploader(pool, uid, 60),
+            "error": err,
+        },
+        headers=_no_store_headers(),
+    )
+
+
+@app.post("/companies/{slug}/review")
+async def company_add_review(
+    slug: str,
+    request: Request,
+    pool=Depends(pool_dep),
+    body: str = Form(""),
+    hr_contact_id: str = Form(""),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    company = await repo.get_company_by_slug(pool, slug)
+    if not company:
+        raise HTTPException(status_code=404)
+    hid: int | None = None
+    raw_hr = (hr_contact_id or "").strip()
+    if raw_hr:
+        try:
+            hid = int(raw_hr)
+        except ValueError:
+            return RedirectResponse(
+                f"/companies/{slug}/interviews?err=Некорректный+HR", status_code=303
+            )
+    code = await repo.insert_company_interview_review(
+        pool, int(company["id"]), uid, body, hid
+    )
+    if code == "short_body":
+        return RedirectResponse(
+            f"/companies/{slug}/interviews?err=Минимум+10+символов+в+отзыве+или+выбери+HR",
+            status_code=303,
+        )
+    if code == "bad_hr":
+        return RedirectResponse(
+            f"/companies/{slug}/interviews?err=Контакт+HR+не+найдён", status_code=303
+        )
+    if code == "hr_other_company":
+        return RedirectResponse(
+            f"/companies/{slug}/interviews?err=Этот+HR+уже+привязан+к+другой+компании",
+            status_code=303,
+        )
+    review_text = (body or "").strip()
+    hr_ref: str | None = None
+    if hid is not None:
+        hrow = await repo.get_hr_contact(pool, hid)
+        if hrow:
+            hr_ref = str(hrow.get("contact_ref") or "").strip() or None
+    body_for_file = review_text if review_text else "—"
+    try:
+        interviews_store.append_site_review_for_company(
+            company_display_name=str(company["name"]),
+            author_telegram_id=int(uid),
+            body=body_for_file,
+            hr_contact_ref=hr_ref,
+        )
+    except Exception:
+        log.exception(
+            "append_site_review_for_company failed company_id=%s slug=%s",
+            company["id"],
+            slug,
+        )
+    return RedirectResponse(f"/companies/{slug}/interviews", status_code=303)
+
+
+@app.post("/companies/{slug}/link-file")
+async def company_link_file(
+    slug: str,
+    request: Request,
+    pool=Depends(pool_dep),
+    file_id_select: str = Form(""),
+    file_id_manual: str = Form(""),
+    note: str = Form(""),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    company = await repo.get_company_by_slug(pool, slug)
+    if not company:
+        raise HTTPException(status_code=404)
+    raw_id = (file_id_select or "").strip() or (file_id_manual or "").strip()
+    try:
+        fid = int(raw_id)
+    except ValueError:
+        return RedirectResponse(
+            f"/companies/{slug}/files?err=Выбери+файл+из+списка+или+укажи+id", status_code=303
+        )
+    res = await repo.link_company_file(
+        pool, int(company["id"]), fid, uid, (note or "").strip() or None
+    )
+    if res == "bad_file":
+        return RedirectResponse(
+            f"/companies/{slug}/files?err=Файл+не+найден+или+ещё+не+в+библиотеке",
+            status_code=303,
+        )
+    if res == "duplicate":
+        return RedirectResponse(
+            f"/companies/{slug}/files?err=Этот+файл+уже+прикреплён", status_code=303
+        )
+    return RedirectResponse(f"/companies/{slug}/files", status_code=303)
+
+
+@app.post("/companies/{slug}/link-hr")
+async def company_link_hr(
+    slug: str,
+    request: Request,
+    pool=Depends(pool_dep),
+    hr_contact_id: str = Form(""),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    company = await repo.get_company_by_slug(pool, slug)
+    if not company:
+        raise HTTPException(status_code=404)
+    try:
+        hid = int((hr_contact_id or "").strip())
+    except ValueError:
+        return RedirectResponse(f"/companies/{slug}/hr?err=Выбери+контакт+HR", status_code=303)
+    ok = await repo.set_hr_contact_company(pool, hid, int(company["id"]))
+    if not ok:
+        return RedirectResponse(
+            f"/companies/{slug}/hr?err=Не+удалось+привязать+—+контакт+уже+у+другой+компании+или+не+подтверждён",
+            status_code=303,
+        )
+    return RedirectResponse(f"/companies/{slug}/hr", status_code=303)
+
+
+@app.post("/companies/{slug}/unlink-hr")
+async def company_unlink_hr(
+    slug: str,
+    request: Request,
+    pool=Depends(pool_dep),
+    hr_contact_id: str = Form(""),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    company = await repo.get_company_by_slug(pool, slug)
+    if not company:
+        raise HTTPException(status_code=404)
+    try:
+        hid = int((hr_contact_id or "").strip())
+    except ValueError:
+        return RedirectResponse(f"/companies/{slug}/hr", status_code=303)
+    await repo.unlink_hr_contact_from_company(pool, hid, int(company["id"]))
+    return RedirectResponse(f"/companies/{slug}/hr", status_code=303)
 
 
 @app.get("/people", response_class=HTMLResponse)

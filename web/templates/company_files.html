@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% set section = "Файлы" %}
+{% set page_title = "Материалы" %}
+{% set page_subtitle = "Документы из библиотеки, закреплённые за этой компанией. Новые вложения — через библиотеку." %}
+{% block main %}
+{% include "_company_subhead.html" %}
+
+{% if error %}
+<div class="mb-8 rounded-xl border border-amber-500/35 bg-amber-500/[0.09] px-4 py-3 text-sm text-amber-100/95">{{ error }}</div>
+{% endif %}
+
+<section class="mb-10">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
+    <h2 class="text-xs uppercase tracking-[0.18em] text-ink-500 font-medium flex items-center gap-2">
+      <span class="text-sky-400">{{ icon.folder() }}</span> Прикреплённые
+    </h2>
+    <a href="/library" class="btn rounded-xl px-4 py-2 text-sm border-ink-600 bg-ink-800/50 hover:border-accent/40 hover:text-accent transition-colors inline-flex items-center gap-2 no-underline">
+      Открыть библиотеку {{ icon.chevron_right() }}
+    </a>
+  </div>
+
+  {% if file_links %}
+  <ul class="space-y-3">
+    {% for f in file_links %}
+    <li class="rounded-2xl border border-ink-500/65 bg-ink-800/25 p-4 md:p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4 ring-1 ring-white/[0.02] hover:border-ink-500 transition-colors">
+      <div class="min-w-0 flex-1">
+        <a href="/api/library/{{ f.file_id }}/raw" target="_blank" rel="noopener" class="font-medium text-accent hover:text-accent-2 transition-colors truncate block text-[15px]">
+          {{ f.original_filename or ('Файл #' ~ f.file_id) }}
+        </a>
+        <div class="text-xs text-ink-500 mt-1 num">#{{ f.file_id }}{% if f.confirmed_category %} · {{ f.confirmed_category }}{% endif %}{% if f.note %} · {{ f.note }}{% endif %}</div>
+        {% if f.summary %}
+        <p class="text-xs text-ink-400 mt-2 line-clamp-2 leading-relaxed">{{ f.summary }}</p>
+        {% endif %}
+      </div>
+      <a href="/api/library/{{ f.file_id }}/raw?dl=1" class="btn rounded-xl px-4 py-2 text-xs border-ink-600 bg-ink-900/50 hover:bg-ink-800 shrink-0 inline-flex items-center gap-2 no-underline">
+        {{ icon.download() }} Скачать
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="rounded-2xl border border-dashed border-ink-600 bg-ink-800/15 px-6 py-12 text-center">
+    <p class="text-sm text-ink-400 max-w-md mx-auto leading-relaxed">Пока нет файлов. Открой документ в библиотеке и нажми «Закрепить за компанией».</p>
+    <a href="/library" class="mt-5 btn btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold inline-flex items-center gap-2 no-underline">В библиотеку</a>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

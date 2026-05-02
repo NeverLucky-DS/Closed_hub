@@ -132,11 +132,25 @@ CREATE TABLE IF NOT EXISTS member_profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS companies (
+    id BIGSERIAL PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT,
+    photo_paths JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_by BIGINT NOT NULL REFERENCES members (telegram_user_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_companies_updated ON companies (updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS hr_contacts (
     id BIGSERIAL PRIMARY KEY,
     contact_ref TEXT NOT NULL,
     status TEXT NOT NULL,
     company TEXT,
+    company_id BIGINT REFERENCES companies (id) ON DELETE SET NULL,
     role_hint TEXT,
     vacancies_hint TEXT,
     summary TEXT,
@@ -144,6 +158,9 @@ CREATE TABLE IF NOT EXISTS hr_contacts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS idx_hr_contacts_company ON hr_contacts (company_id)
+    WHERE company_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS hr_contact_context (
     id BIGSERIAL PRIMARY KEY,
@@ -195,6 +212,33 @@ CREATE TABLE IF NOT EXISTS files (
     uploaded_by BIGINT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS company_files (
+    id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
+    file_id BIGINT NOT NULL REFERENCES files (id) ON DELETE CASCADE,
+    linked_by BIGINT NOT NULL REFERENCES members (telegram_user_id),
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (company_id, file_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_company_files_company ON company_files (company_id);
+
+CREATE TABLE IF NOT EXISTS company_interview_reviews (
+    id BIGSERIAL PRIMARY KEY,
+    company_id BIGINT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
+    author_telegram_id BIGINT NOT NULL REFERENCES members (telegram_user_id),
+    body TEXT NOT NULL,
+    hr_contact_id BIGINT REFERENCES hr_contacts (id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT company_interview_reviews_body_or_hr CHECK (
+        char_length(trim(body)) >= 10 OR hr_contact_id IS NOT NULL
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_company_reviews_company
+    ON company_interview_reviews (company_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS llm_calls (
     id BIGSERIAL PRIMARY KEY,

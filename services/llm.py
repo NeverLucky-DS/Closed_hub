@@ -190,6 +190,74 @@ async def extract_interview_story(pool, raw_text: str) -> dict:
     return json.loads(raw)
 
 
+async def interview_confirmation_preview(pool, data: dict, had_voice: bool) -> dict:
+    """Короткий текст для подтверждения пользователем перед сохранением собеса."""
+    settings = get_settings()
+    template = _load_prompt("interview_preview_user.txt")
+    blob = json.dumps(data, ensure_ascii=False)[:6000]
+    user_block = template.replace("{extract_json}", blob).replace(
+        "{had_voice}", "да" if had_voice else "нет"
+    )
+    raw, _, _ = await mistral_chat(
+        pool,
+        purpose="interview_preview_user",
+        model=settings.mistral_model_routing,
+        system="Reply with JSON only.",
+        user=user_block,
+        json_mode=True,
+        prefer_site_key=True,
+    )
+    out = json.loads(raw)
+    return {
+        "preview_ru": str(out.get("preview_ru") or "").strip(),
+        "summary_line": str(out.get("summary_line") or "").strip(),
+    }
+
+
+async def match_company_for_hub(
+    pool,
+    *,
+    mode: str,
+    companies_block: str,
+    hint: str,
+    detail: str,
+) -> dict:
+    """Сопоставление с карточкой компании на сайте или решение создать новую. JSON от промпта company_match."""
+    settings = get_settings()
+    template = _load_prompt("company_match.txt")
+    user_block = (
+        template.replace("{companies_block}", companies_block[:12000])
+        .replace("{mode}", mode[:32])
+        .replace("{hint}", (hint or "")[:500])
+        .replace("{detail}", (detail or "")[:8000])
+    )
+    raw, _, _ = await mistral_chat(
+        pool,
+        purpose="company_match",
+        model=settings.mistral_model_routing,
+        system="Reply with JSON only.",
+        user=user_block,
+        json_mode=True,
+        prefer_site_key=True,
+    )
+    data = json.loads(raw)
+    act = str(data.get("action") or "skip").lower()
+    if act not in ("match", "create", "skip"):
+        act = "skip"
+    cid = data.get("company_id")
+    try:
+        company_id = int(cid) if cid is not None else None
+    except (TypeError, ValueError):
+        company_id = None
+    name = str(data.get("new_company_name_ru") or "").strip() or None
+    return {
+        "action": act,
+        "company_id": company_id,
+        "new_company_name_ru": name,
+        "reason": str(data.get("reason") or "").strip(),
+    }
+
+
 async def summarize_file(pool, text_sample: str, categories_block: str) -> dict:
     settings = get_settings()
     template = _load_prompt("file_summarize.txt")

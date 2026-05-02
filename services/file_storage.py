@@ -17,6 +17,10 @@ def profile_root() -> Path:
     return Path(get_settings().file_storage_path) / "profiles"
 
 
+def company_root() -> Path:
+    return Path(get_settings().file_storage_path) / "companies"
+
+
 def events_covers_root() -> Path:
     return Path(get_settings().file_storage_path) / "events" / "covers"
 

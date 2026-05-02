@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% block main %}
+<nav class="flex flex-wrap items-center gap-2 text-sm text-ink-400 mb-8">
+  <a href="/companies" class="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 -ml-2 hover:text-accent hover:bg-ink-800/80 transition-colors">
+    <span class="text-ink-500">{{ icon.arrow_left() }}</span>
+    Компании
+  </a>
+</nav>
+
+<div class="max-w-xl">
+  <div class="text-[11px] uppercase tracking-[0.2em] text-ink-500 font-medium">Новая карточка</div>
+  <h1 class="mt-2 text-3xl font-semibold tracking-tight text-ink-50">Компания</h1>
+  <p class="mt-2 text-sm text-ink-400 leading-relaxed">Название и описание. Одно фото станет обложкой в списке и на карточке.</p>
+</div>
+
+{% if error %}
+<div class="mt-8 max-w-xl rounded-xl border border-red-500/35 bg-red-500/[0.08] px-4 py-3 text-sm text-red-200/95 leading-relaxed">{{ error }}</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="mt-8 max-w-xl rounded-2xl border border-ink-500/70 bg-ink-800/20 p-6 md:p-8 space-y-6 shadow-soft ring-1 ring-white/[0.03]">
+  <div>
+    <label class="block text-xs font-medium text-ink-300 uppercase tracking-wider mb-2">Название</label>
+    <input type="text" name="name" required minlength="2" maxlength="200"
+           class="field rounded-xl py-3 px-4 bg-ink-900/60 border-ink-600 placeholder:text-ink-500"
+           placeholder="Например, Acme AI">
+  </div>
+  <div>
+    <label class="block text-xs font-medium text-ink-300 uppercase tracking-wider mb-2">Описание <span class="text-ink-500 font-normal normal-case">(необязательно)</span></label>
+    <textarea name="description" rows="4" maxlength="8000"
+              class="field rounded-xl py-3 px-4 bg-ink-900/60 border-ink-600 placeholder:text-ink-500 min-h-[6rem]"
+              placeholder="Чем занимаются, чем полезны участникам хаба"></textarea>
+  </div>
+  <div>
+    <label class="block text-xs font-medium text-ink-300 uppercase tracking-wider mb-2">Обложка</label>
+    <input type="file" name="photo" accept="image/jpeg,image/png,image/webp"
+           class="block w-full text-sm text-ink-300 file:cursor-pointer file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:bg-ink-700 file:text-ink-100 file:font-medium file:ring-1 file:ring-ink-500 hover:file:bg-ink-600 transition-colors">
+    <p class="mt-2 text-xs text-ink-500">JPEG, PNG или WebP, макс. {{ hub_settings.web_max_profile_photo_mb }} МБ.</p>
+  </div>
+  <div class="pt-2">
+    <button type="submit" class="btn btn-primary w-full sm:w-auto px-6 py-3 rounded-xl font-semibold">{{ icon.plus() }} Создать карточку</button>
+  </div>
+</form>
+{% endblock %}

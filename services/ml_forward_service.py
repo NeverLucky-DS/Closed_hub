@@ -69,7 +69,13 @@ def forward_raw_for_site(messages: list[Message]) -> str:
 
 
 _HUB_FORWARD_BLOCK_SESSIONS = frozenset(
-    {"interview_tell", "interview_hub", "awaiting_folder_name", "awaiting_invite"}
+    {
+        "interview_tell",
+        "interview_confirm",
+        "interview_hub",
+        "awaiting_folder_name",
+        "awaiting_invite",
+    }
 )
 
 

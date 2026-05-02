@@ -11,13 +11,14 @@ from telegram.ext import ContextTypes
 from config import get_settings
 from utils import nav_labels as N
 from bot.keyboards import (
+    interview_confirm_keyboard,
     interview_hub_keyboard,
     interview_tell_keyboard,
     invite_flow_keyboard,
     main_menu,
 )
 from db import repo
-from services import events_service, files_service, hr_service, interview_service, llm, ml_forward_service, routing
+from services import company_sync, events_service, files_service, hr_service, interview_service, llm, ml_forward_service, routing
 from services import interviews_store
 from utils.telegram_user import user_display_handle
 from utils.text_slug import slugify_folder
@@ -245,7 +246,7 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     state, payload = await repo.get_session(pool, uid)
 
     if text_raw in N.GUIDE_ALIASES:
-        if state in ("awaiting_invite", "interview_hub", "interview_tell"):
+        if state in ("awaiting_invite", "interview_hub", "interview_tell", "interview_confirm"):
             await repo.clear_session(pool, uid)
         await _help_reply(msg, wl)
         return
@@ -448,7 +449,9 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             )
             return
         if text_raw in N.SHARE_ALIASES:
-            await repo.set_session(pool, uid, "interview_tell", {"interview_lines": []})
+            await repo.set_session(
+                pool, uid, "interview_tell", {"interview_lines": [], "interview_had_voice": False}
+            )
             await msg.reply_text(
                 interview_service.WELCOME_TELL,
                 reply_markup=interview_tell_keyboard(),
@@ -460,6 +463,13 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
+    if state == "interview_confirm":
+        await msg.reply_text(
+            "Сначала нажми «Подтвердить» или «Править текст» под сообщением с проверкой.",
+            reply_markup=interview_confirm_keyboard(),
+        )
+        return
+
     if state == "interview_tell":
         if text_raw in N.CANCEL_FLOW_ALIASES:
             await repo.clear_session(pool, uid)
@@ -467,20 +477,29 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             return
         if text_raw in N.DONE_ALIASES:
             lines = list(payload.get("interview_lines") or [])
-            ok, reply_txt = await interview_service.finalize_story(
-                pool, user, lines, bot=context.bot
+            had_voice = bool(payload.get("interview_had_voice"))
+            ok, err, pending = await interview_service.build_interview_pending(
+                pool, user, lines, had_voice
             )
-            if ok:
-                await repo.clear_session(pool, uid)
-                await msg.reply_text(reply_txt, reply_markup=main_menu(wl))
-            else:
-                await msg.reply_text(reply_txt, reply_markup=interview_tell_keyboard())
+            if not ok or not pending:
+                await msg.reply_text(err or "Не получилось.", reply_markup=interview_tell_keyboard())
+                return
+            preview = pending["preview_ru"]
+            await repo.set_session(
+                pool, uid, "interview_confirm", {"interview_pending": pending}
+            )
+            await msg.reply_text(
+                f"Проверь, всё ли так:\n\n{preview}\n\n"
+                "Если верно — «Подтвердить». Если нужно дописать — «Править текст».",
+                reply_markup=interview_confirm_keyboard(),
+            )
             return
         if text_raw:
             pl = dict(payload)
             lines = list(pl.get("interview_lines") or [])
             lines.append(text_raw)
             pl["interview_lines"] = lines
+            pl.setdefault("interview_had_voice", False)
             await repo.set_session(pool, uid, "interview_tell", pl)
             await msg.reply_text(
                 f"Записал. Можно дополнить текстом или голосом, затем «{N.BTN_STORY_DONE}».",
@@ -536,6 +555,10 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     f"Файл сохранён в папке «{label}».\n"
                     f"Технический ярлык папки: {slug}"
                 )
+                try:
+                    await company_sync.offer_file_company_link(context.bot, pool, chat_id, int(fid))
+                except Exception:
+                    log.exception("offer_file_company_link folder_name")
             else:
                 await msg.reply_text("Не удалось: нет файла или чужая запись.")
         return

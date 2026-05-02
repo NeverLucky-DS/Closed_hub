@@ -99,6 +99,31 @@
 
     <section class="viewer min-h-[60vh]">
       {% if selected %}
+      {% if attach_err %}
+      <div class="mx-4 mt-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+        {% if attach_err == 'forbidden' %}Можно закреплять только свои файлы.{% elif attach_err == 'not_file' %}Файл не найден или ещё не в библиотеке.{% elif attach_err == 'dup' %}Уже закреплён за этой компанией.{% elif attach_err == 'no_company' %}Компания не найдена.{% elif attach_err == 'bad_params' %}Некорректные данные.{% else %}Не удалось закрепить.{% endif %}
+      </div>
+      {% endif %}
+      {% if selected.uploaded_by == uid and companies_for_attach %}
+      <div class="px-4 py-3 border-b border-ink-600/80 bg-ink-800/30">
+        <div class="text-xs uppercase tracking-wider text-ink-400 mb-2">Карточка компании на сайте</div>
+        <form method="post" action="/library/attach-company" class="flex flex-col sm:flex-row gap-2 sm:items-end max-w-xl">
+          <input type="hidden" name="cat" value="{{ category }}">
+          <input type="hidden" name="file_id" value="{{ selected.id }}">
+          <div class="flex-1 min-w-0">
+            <label class="block text-xs text-ink-400 mb-1">Компания</label>
+            <select name="company_id" required class="w-full rounded-xl bg-ink-800 border border-ink-600 px-3 py-2 text-sm text-ink-100">
+              {% for co in companies_for_attach %}
+              <option value="{{ co.id }}">{{ co.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="px-4 py-2 rounded-xl bg-accent/15 text-accent text-sm font-medium ring-1 ring-accent/40 hover:bg-accent/25 whitespace-nowrap">
+            Закрепить файл
+          </button>
+        </form>
+      </div>
+      {% endif %}
       {% set kind = selected | file_kind %}
       <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-ink-600">
         <div class="min-w-0">

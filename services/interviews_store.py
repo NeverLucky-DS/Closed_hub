@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from config import get_settings
+from utils.text_slug import interview_company_slug
 
 log = logging.getLogger(__name__)
 
@@ -47,12 +49,36 @@ def path_for_slug(slug: str) -> Path:
 def append_report(*, slug: str, company_title: str, body: str) -> Path:
     path = path_for_slug(slug)
     block = body.rstrip() + "\n"
+    sep = "\n\n---\n\n"
     if not path.is_file():
         content = f"# {company_title}\n\n{block}\n"
         path.write_text(content, encoding="utf-8")
         log.info("interview file created slug=%s", slug)
         return path
     existing = path.read_text(encoding="utf-8").rstrip()
-    path.write_text(existing + "\n\n" + block + "\n", encoding="utf-8")
+    path.write_text(existing + sep + block + "\n", encoding="utf-8")
     log.info("interview file appended slug=%s", slug)
     return path
+
+
+def append_site_review_for_company(
+    *,
+    company_display_name: str,
+    author_telegram_id: int,
+    body: str,
+    hr_contact_ref: str | None = None,
+) -> Path:
+    """Тот же .md, что собирает бот при «Поделиться» — чтобы «Читать собесы» видел отзывы с сайта."""
+    name = (company_display_name or "").strip() or "Компания"
+    slug = interview_company_slug(name)
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    lines = [
+        f"### {ts} — с сайта (Telegram id: {author_telegram_id})",
+        "",
+        body.strip(),
+    ]
+    if hr_contact_ref:
+        lines.extend(["", f"Упомянут HR: {hr_contact_ref}"])
+    lines.append("")
+    block = "\n".join(lines)
+    return append_report(slug=slug, company_title=name, body=block)

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icon %}
+{% block main %}
+<div class="relative mb-10">
+  <div class="absolute -top-8 -left-8 w-80 h-80 rounded-full bg-accent/15 blur-3xl pointer-events-none"></div>
+  <div class="absolute top-24 right-0 w-72 h-72 rounded-full bg-accent-2/10 blur-3xl pointer-events-none"></div>
+  <header class="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+    <div>
+      <div class="text-[11px] uppercase tracking-[0.22em] text-ink-500 font-medium">База хаба</div>
+      <h1 class="mt-2 text-3xl md:text-4xl font-semibold tracking-tight text-ink-50">Компании</h1>
+      <p class="mt-3 text-sm md:text-[15px] text-ink-400 max-w-xl leading-relaxed">Карточки с HR из бота, материалами из библиотеки и отзывами о собесах. У каждой карточки может быть своя обложка.</p>
+    </div>
+    <a href="/companies/new" class="btn btn-primary shrink-0 rounded-xl px-5 py-3 font-semibold shadow-glow no-underline">
+      {{ icon.plus() }}<span>Добавить компанию</span>
+    </a>
+  </header>
+</div>
+
+{% if companies %}
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+  {% for c in companies %}
+  <a href="/companies/{{ c.slug }}" class="group relative rounded-2xl overflow-hidden border border-ink-500/70 bg-ink-800/20 shadow-soft ring-1 ring-white/[0.03] hover:border-accent/35 hover:shadow-glow transition-all duration-300 flex flex-col">
+    <div class="aspect-[16/10] relative overflow-hidden">
+      {% set thumb = c | company_thumb %}
+      {% set cov = c | company_cover_class %}
+      {% if thumb %}
+      <img src="{{ thumb }}" alt="" class="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500" width="640" height="400" loading="lazy">
+      <div class="absolute inset-0 bg-gradient-to-t from-ink-900/90 via-ink-900/20 to-transparent opacity-90"></div>
+      {% else %}
+      <div class="cover-bg {{ cov }} w-full h-full flex items-center justify-center relative">
+        <span class="relative z-10 text-4xl font-bold text-white/95 tracking-tight drop-shadow-lg">{{ (c.name[:1] if c.name else '?') | upper }}</span>
+      </div>
+      {% endif %}
+      <div class="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-2">
+        <span class="font-semibold text-white text-lg tracking-tight drop-shadow-md line-clamp-2">{{ c.name }}</span>
+        <span class="text-white/80 opacity-0 group-hover:opacity-100 transition-opacity hidden sm:inline">{{ icon.arrow_right() }}</span>
+      </div>
+    </div>
+    <div class="p-4 pt-3 flex flex-wrap gap-2 border-t border-ink-600/50 bg-ink-900/40">
+      <span class="badge num">HR {{ c.hr_count }}</span>
+      <span class="badge num">Файлы {{ c.files_count }}</span>
+      <span class="badge badge-accent num">Отзывы {{ c.reviews_count }}</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="relative rounded-2xl border border-ink-500/60 bg-ink-800/25 p-12 md:p-16 text-center overflow-hidden">
+  <div class="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-accent-2/5 pointer-events-none"></div>
+  <div class="relative mx-auto w-16 h-16 rounded-2xl bg-accent/12 ring-1 ring-accent/30 flex items-center justify-center text-accent">
+    {{ icon.building() }}
+  </div>
+  <p class="relative mt-6 text-ink-200 text-base max-w-md mx-auto leading-relaxed">Пока нет компаний в базе — создай первую карточку.</p>
+  <a href="/companies/new" class="relative mt-6 btn btn-primary rounded-xl px-6 py-3 font-semibold inline-flex items-center gap-2 no-underline">
+    {{ icon.plus() }} Создать компанию
+  </a>
+</div>
+{% endif %}
+{% endblock %}

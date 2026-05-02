@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 import asyncpg
+from asyncpg.exceptions import CheckViolationError, UniqueViolationError
 
 _UNSET = object()
 
@@ -1351,3 +1352,364 @@ async def hackathon_reject_application(
                 application_id,
             )
             return "ok"
+
+
+async def company_slug_taken(pool: asyncpg.Pool, slug: str) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT 1 FROM companies WHERE slug = $1", slug)
+        return row is not None
+
+
+async def allocate_unique_company_slug(pool: asyncpg.Pool, display_name: str) -> str:
+    from utils.company_slug import slugify_company_name
+
+    base = slugify_company_name(display_name)
+    for i in range(0, 500):
+        slug = base if i == 0 else f"{base}-{i}"
+        if not await company_slug_taken(pool, slug):
+            return slug
+    import secrets
+
+    return f"{base}-{secrets.token_hex(3)}"
+
+
+async def find_company_id_by_name_ci(pool: asyncpg.Pool, name: str) -> int | None:
+    n = (name or "").strip()
+    if len(n) < 2:
+        return None
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id FROM companies
+            WHERE lower(trim(name)) = lower(trim($1))
+            LIMIT 1
+            """,
+            n,
+        )
+        return int(row["id"]) if row else None
+
+
+async def list_companies_compact(pool: asyncpg.Pool, limit: int = 40) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, name, slug FROM companies
+            ORDER BY name ASC
+            LIMIT $1
+            """,
+            limit,
+        )
+        return list(rows)
+
+
+async def list_recent_confirmed_files_for_uploader(
+    pool: asyncpg.Pool, telegram_user_id: int, limit: int = 50
+) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, original_filename, summary, confirmed_category, created_at
+            FROM files
+            WHERE uploaded_by = $1 AND status = 'confirmed'
+            ORDER BY confirmed_at DESC NULLS LAST, created_at DESC
+            LIMIT $2
+            """,
+            telegram_user_id,
+            limit,
+        )
+        return list(rows)
+
+
+async def insert_company(
+    pool: asyncpg.Pool,
+    slug: str,
+    name: str,
+    description: str | None,
+    created_by: int,
+    photo_paths: list[str] | None = None,
+) -> int:
+    paths = photo_paths if photo_paths else []
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO companies (slug, name, description, photo_paths, created_by)
+            VALUES ($1, $2, $3, $4::jsonb, $5)
+            RETURNING id
+            """,
+            slug,
+            name,
+            description,
+            json.dumps(paths),
+            created_by,
+        )
+        return int(row["id"])
+
+
+async def update_company_photo_paths(
+    pool: asyncpg.Pool, company_id: int, photo_paths: list[str]
+) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE companies SET photo_paths = $2::jsonb, updated_at = now() WHERE id = $1
+            """,
+            company_id,
+            json.dumps(photo_paths),
+        )
+
+
+async def get_company_by_slug(pool: asyncpg.Pool, slug: str) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow("SELECT * FROM companies WHERE slug = $1", slug)
+
+
+async def get_company_by_id(pool: asyncpg.Pool, company_id: int) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow("SELECT * FROM companies WHERE id = $1", company_id)
+
+
+async def get_company_tab_counts(pool: asyncpg.Pool, company_id: int) -> asyncpg.Record:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT
+                (SELECT COUNT(*)::int FROM hr_contacts
+                 WHERE company_id = $1 AND status = 'confirmed') AS hr_n,
+                (SELECT COUNT(*)::int FROM company_interview_reviews
+                 WHERE company_id = $1) AS reviews_n,
+                (SELECT COUNT(*)::int FROM company_files WHERE company_id = $1) AS files_n
+            """,
+            company_id,
+        )
+
+
+async def delete_company(pool: asyncpg.Pool, company_id: int) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "DELETE FROM companies WHERE id = $1 RETURNING id",
+            company_id,
+        )
+        return row is not None
+
+
+async def list_companies_with_counts(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                c.*,
+                COALESCE((
+                    SELECT COUNT(*)::int FROM hr_contacts h
+                    WHERE h.company_id = c.id AND h.status = 'confirmed'
+                ), 0) AS hr_count,
+                COALESCE((
+                    SELECT COUNT(*)::int FROM company_files cf WHERE cf.company_id = c.id
+                ), 0) AS files_count,
+                COALESCE((
+                    SELECT COUNT(*)::int FROM company_interview_reviews r
+                    WHERE r.company_id = c.id
+                ), 0) AS reviews_count
+            FROM companies c
+            ORDER BY c.updated_at DESC, c.name ASC
+            """
+        )
+        return list(rows)
+
+
+async def list_hr_for_company(pool: asyncpg.Pool, company_id: int) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, contact_ref, company, role_hint, vacancies_hint, summary, updated_at
+            FROM hr_contacts
+            WHERE company_id = $1 AND status = 'confirmed'
+            ORDER BY updated_at DESC
+            """,
+            company_id,
+        )
+        return list(rows)
+
+
+async def list_hr_contacts_for_company_picker(
+    pool: asyncpg.Pool, company_id: int, limit: int = 400
+) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, contact_ref, company, role_hint, summary
+            FROM hr_contacts
+            WHERE status = 'confirmed'
+              AND (company_id IS NULL OR company_id = $2)
+            ORDER BY updated_at DESC
+            LIMIT $1
+            """,
+            limit,
+            company_id,
+        )
+        return list(rows)
+
+
+async def set_hr_contact_company(
+    pool: asyncpg.Pool,
+    hr_contact_id: int,
+    company_id: int,
+) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE hr_contacts SET company_id = $2, updated_at = now()
+            WHERE id = $1 AND status = 'confirmed'
+              AND (company_id IS NULL OR company_id = $2)
+            RETURNING id
+            """,
+            hr_contact_id,
+            company_id,
+        )
+        if row:
+            await conn.execute(
+                "UPDATE companies SET updated_at = now() WHERE id = $1",
+                company_id,
+            )
+        return row is not None
+
+
+async def unlink_hr_contact_from_company(
+    pool: asyncpg.Pool, hr_contact_id: int, company_id: int
+) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE hr_contacts SET company_id = NULL, updated_at = now()
+            WHERE id = $1 AND company_id = $2 AND status = 'confirmed'
+            RETURNING id
+            """,
+            hr_contact_id,
+            company_id,
+        )
+        if row:
+            await conn.execute(
+                "UPDATE companies SET updated_at = now() WHERE id = $1",
+                company_id,
+            )
+        return row is not None
+
+
+async def link_company_file(
+    pool: asyncpg.Pool,
+    company_id: int,
+    file_id: int,
+    linked_by: int,
+    note: str | None,
+) -> str:
+    async with pool.acquire() as conn:
+        c = await conn.fetchrow("SELECT id FROM companies WHERE id = $1", company_id)
+        if not c:
+            return "missing_company"
+        f = await conn.fetchrow(
+            "SELECT id FROM files WHERE id = $1 AND status = 'confirmed'",
+            file_id,
+        )
+        if not f:
+            return "bad_file"
+        try:
+            await conn.execute(
+                """
+                INSERT INTO company_files (company_id, file_id, linked_by, note)
+                VALUES ($1, $2, $3, $4)
+                """,
+                company_id,
+                file_id,
+                linked_by,
+                note,
+            )
+        except UniqueViolationError:
+            return "duplicate"
+        await conn.execute(
+            "UPDATE companies SET updated_at = now() WHERE id = $1",
+            company_id,
+        )
+        return "ok"
+
+
+async def list_company_files_with_meta(
+    pool: asyncpg.Pool, company_id: int
+) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT cf.id AS link_id, cf.note, cf.created_at AS linked_at,
+                   f.id AS file_id, f.original_filename, f.mime_type, f.summary,
+                   f.confirmed_category
+            FROM company_files cf
+            JOIN files f ON f.id = cf.file_id
+            WHERE cf.company_id = $1
+            ORDER BY cf.created_at DESC
+            """,
+            company_id,
+        )
+        return list(rows)
+
+
+async def insert_company_interview_review(
+    pool: asyncpg.Pool,
+    company_id: int,
+    author_telegram_id: int,
+    body: str,
+    hr_contact_id: int | None,
+) -> str:
+    b = (body or "").strip()
+    if hr_contact_id is None and len(b) < 10:
+        return "short_body"
+    async with pool.acquire() as conn:
+        if hr_contact_id is not None:
+            hr = await conn.fetchrow(
+                """
+                SELECT id, company_id, status FROM hr_contacts WHERE id = $1
+                """,
+                hr_contact_id,
+            )
+            if not hr or str(hr["status"]) != "confirmed":
+                return "bad_hr"
+            cid = hr["company_id"]
+            if cid is not None and int(cid) != company_id:
+                return "hr_other_company"
+        try:
+            await conn.execute(
+                """
+                INSERT INTO company_interview_reviews
+                    (company_id, author_telegram_id, body, hr_contact_id)
+                VALUES ($1, $2, $3, $4)
+                """,
+                company_id,
+                author_telegram_id,
+                b or "—",
+                hr_contact_id,
+            )
+        except CheckViolationError:
+            return "short_body"
+        await conn.execute(
+            "UPDATE companies SET updated_at = now() WHERE id = $1",
+            company_id,
+        )
+        return "ok"
+
+
+async def list_company_interview_reviews(
+    pool: asyncpg.Pool, company_id: int
+) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT r.id, r.body, r.created_at, r.author_telegram_id,
+                   r.hr_contact_id,
+                   h.summary AS hr_summary,
+                   h.role_hint AS hr_role,
+                   h.contact_ref AS hr_contact_ref
+            FROM company_interview_reviews r
+            LEFT JOIN hr_contacts h ON h.id = r.hr_contact_id
+            WHERE r.company_id = $1
+            ORDER BY r.created_at DESC
+            """,
+            company_id,
+        )
+        return list(rows)
