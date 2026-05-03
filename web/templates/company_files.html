@@ -25,7 +25,7 @@
     {% for f in file_links %}
     <li class="rounded-2xl border border-ink-500/65 bg-ink-800/25 p-4 md:p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4 ring-1 ring-white/[0.02] hover:border-ink-500 transition-colors">
       <div class="min-w-0 flex-1">
-        <a href="/api/library/{{ f.file_id }}/raw" target="_blank" rel="noopener" class="font-medium text-accent hover:text-accent-2 transition-colors truncate block text-[15px]">
+        <a href="/library?file={{ f.file_id }}" class="font-medium text-accent hover:text-accent-2 transition-colors truncate block text-[15px]">
           {{ f.original_filename or ('Файл #' ~ f.file_id) }}
         </a>
         <div class="text-xs text-ink-500 mt-1 num">#{{ f.file_id }}{% if f.confirmed_category %} · {{ f.confirmed_category }}{% endif %}{% if f.note %} · {{ f.note }}{% endif %}</div>

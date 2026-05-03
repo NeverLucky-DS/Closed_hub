@@ -1,9 +1,0 @@
-# DVC: версионирование больших артефактов (экспорты БД, датасеты, бэкапы storage).
-# Пример:
-#   mkdir -p artifacts/db_dump
-#   pg_dump ... > artifacts/db_dump/closedhub.sql
-#   dvc add artifacts/db_dump/closedhub.sql
-#   git add artifacts/db_dump/closedhub.sql.dvc .gitignore
-#
-# Удалённое хранилище: dvc remote add -d myremote s3://bucket/prefix
-stages: {}

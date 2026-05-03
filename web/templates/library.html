@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% import "_icons.html" as icon %}
 {% block main %}
-<header class="mb-7">
+<header class="mb-7 {% if view == 'files' and selected %}max-md:hidden{% endif %}">
   <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Библиотека</div>
   <h1 class="mt-1 text-2xl md:text-3xl font-semibold tracking-tight">
     {% if view == 'folders' %}Файлы по темам{% else %}{{ category_label }}{% endif %}
@@ -62,7 +62,7 @@
 
 {% else %}
   <div class="grid grid-cols-1 lg:grid-cols-[18rem_1fr] gap-4">
-    <aside class="card overflow-hidden">
+    <aside id="library-file-list" class="card overflow-hidden scroll-mt-24 {% if selected %}hidden lg:block{% endif %}">
       <div class="px-3 py-2.5 border-b border-ink-600 text-xs uppercase tracking-[0.18em] text-ink-300">
         {{ files | length }} {{ files | length | ru_plural(['файл','файла','файлов']) }}
       </div>
@@ -97,14 +97,30 @@
       </ul>
     </aside>
 
-    <section class="viewer min-h-[60vh]">
+    <section class="viewer min-h-[50vh] md:min-h-[60vh] {% if selected %}flex flex-col{% elif not files %}flex flex-col{% else %}hidden lg:flex lg:flex-col{% endif %}">
       {% if selected %}
+      {% set dl_url = "/api/library/" ~ selected.id ~ "/raw?dl=1" %}
+      {% set view_url = "/api/library/" ~ selected.id ~ "/raw" %}
+      {% set safe_filename = (selected.original_filename or 'file') | replace('"', '') | replace('<', '') | replace('>', '') %}
+      <div id="library-file-actions" hidden
+           data-dl-url="{{ dl_url }}"
+           data-view-url="{{ view_url }}"
+           data-filename="{{ safe_filename }}"></div>
+      <div class="md:hidden sticky z-[25] -mx-4 px-3 py-2.5 mb-0 border-b border-ink-600/50 bg-ink-900/98 backdrop-blur-sm"
+           style="top: var(--app-mobile-chrome-h, 7.5rem);">
+        <a href="/library?cat={{ category }}"
+           class="inline-flex items-center gap-2 text-sm font-medium text-ink-100 hover:text-accent min-h-[44px] rounded-lg -mx-1 px-1"
+           title="Вернуться к списку (в PWA нет системной «Назад»)">
+          <span class="text-accent">{{ icon.arrow_left() }}</span>
+          Назад к списку
+        </a>
+      </div>
       {% if attach_err %}
       <div class="mx-4 mt-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
         {% if attach_err == 'forbidden' %}Можно закреплять только свои файлы.{% elif attach_err == 'not_file' %}Файл не найден или ещё не в библиотеке.{% elif attach_err == 'dup' %}Уже закреплён за этой компанией.{% elif attach_err == 'no_company' %}Компания не найдена.{% elif attach_err == 'bad_params' %}Некорректные данные.{% else %}Не удалось закрепить.{% endif %}
       </div>
       {% endif %}
-      {% if selected.uploaded_by == uid and companies_for_attach %}
+      {% if (selected.uploaded_by == uid or is_admin) and companies_for_attach %}
       <div class="px-4 py-3 border-b border-ink-600/80 bg-ink-800/30">
         <div class="text-xs uppercase tracking-wider text-ink-400 mb-2">Карточка компании на сайте</div>
         <form method="post" action="/library/attach-company" class="flex flex-col sm:flex-row gap-2 sm:items-end max-w-xl">
@@ -123,46 +139,77 @@
           </button>
         </form>
       </div>
+      {% elif selected.uploaded_by == uid or is_admin %}
+      <div class="px-4 py-3 border-b border-ink-600/80 bg-ink-800/20 text-sm text-ink-300">
+        Чтобы закрепить файл за компанией, сначала добавь <a href="/companies/new" class="text-accent hover:underline">карточку компании</a> или открой <a href="/companies" class="text-accent hover:underline">список компаний</a>.
+      </div>
       {% endif %}
       {% set kind = selected | file_kind %}
-      <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-ink-600">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-3 md:px-4 py-3 border-b border-ink-600/50">
         <div class="min-w-0">
-          <div class="text-sm text-ink-100 truncate">{{ selected.original_filename or ('#' ~ selected.id) }}</div>
-          <div class="text-xs text-ink-300 num">
+          <div class="hidden md:block text-sm text-ink-100 break-words">{{ selected.original_filename or ('#' ~ selected.id) }}</div>
+          <div class="md:hidden text-sm font-medium text-ink-100 break-words leading-snug">{{ selected.original_filename or ('#' ~ selected.id) }}</div>
+          <div class="text-[11px] md:text-xs text-ink-300 num mt-0.5 md:mt-0">
             {{ selected.uploader_handle or selected.uploaded_by }} ·
             {{ (selected.confirmed_at or selected.created_at) | dt_short }}
-            {% if selected.mime_type %} · {{ selected.mime_type }}{% endif %}
+            <span class="hidden md:inline">{% if selected.mime_type %} · {{ selected.mime_type }}{% endif %}</span>
           </div>
         </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-shrink-0 w-full md:w-auto">
           {% if is_admin %}
-          <button type="button" class="btn text-xs text-rose-300/90 border border-rose-500/40 hover:bg-rose-500/10 admin-del-file flex items-center gap-1" data-fid="{{ selected.id }}" title="Удалить файл">{{ icon.trash() }}<span>Удалить</span></button>
+          <button type="button" class="btn text-xs text-rose-300/90 border border-rose-500/40 hover:bg-rose-500/10 admin-del-file flex items-center justify-center gap-1 min-h-[44px]" data-fid="{{ selected.id }}" title="Удалить файл">{{ icon.trash() }}<span>Удалить</span></button>
           {% endif %}
-          <a class="btn" href="/api/library/{{ selected.id }}/raw?dl=1">
+          <a class="hidden md:inline-flex btn items-center justify-center min-h-[40px]" href="{{ dl_url }}">
             {{ icon.download() }}<span>Скачать</span>
           </a>
+          <button type="button" class="md:hidden library-blob-download btn btn-primary items-center justify-center gap-2 min-h-[48px] text-center w-full">
+            {{ icon.download() }}<span>{% if kind == 'pdf' %}Сохранить PDF{% else %}Сохранить файл{% endif %}</span>
+          </button>
         </div>
       </div>
-      <p class="px-4 py-2 text-xs text-ink-300 border-b border-ink-600/80">
+      <p class="hidden md:block px-4 py-2 text-xs text-ink-300 border-b border-ink-600/80">
         Превью ниже — только просмотр в браузере. Файл сохранится на диск только по кнопке «Скачать».
       </p>
+      <details class="md:hidden group mx-3 my-2 rounded-xl border border-ink-600/60 bg-ink-800/40 text-xs text-ink-300">
+        <summary class="cursor-pointer list-none px-3 py-2.5 font-medium text-ink-200 [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
+          <span>Совет для iPhone</span>
+          <span class="text-ink-400 shrink-0 transition-transform group-open:rotate-180">{{ icon.chevron_down() }}</span>
+        </summary>
+        <div class="px-3 pb-3 pt-0 text-ink-300/95 leading-relaxed border-t border-ink-600/40">
+          Скачивание идёт через сайт. Если откроется превью — «Поделиться» → «Сохранить в файлы».
+        </div>
+      </details>
       {% if kind == 'pdf' %}
-        <iframe class="viewer-frame" src="/api/library/{{ selected.id }}/raw#toolbar=1&navpanes=0" title="PDF"></iframe>
+        <div class="viewer-frame-wrap hidden md:flex">
+          <iframe class="viewer-frame" src="/api/library/{{ selected.id }}/raw#toolbar=1&navpanes=0" title="PDF"></iframe>
+        </div>
+        <div id="library-pdf-mobile" class="md:hidden border-t border-ink-600/40">
+          <p id="library-pdf-mobile-status" class="text-xs text-ink-300 text-center px-3 py-2 min-h-[2.5rem] flex items-center justify-center"></p>
+          <div id="library-pdf-mobile-pages" class="px-2 pb-4"></div>
+        </div>
       {% elif kind == 'image' %}
-        <img src="/api/library/{{ selected.id }}/raw" alt="" loading="lazy">
+        <img src="/api/library/{{ selected.id }}/raw" alt="" loading="lazy" class="library-preview-img">
       {% else %}
         <div class="flex flex-col items-center justify-center text-center px-6 py-16 gap-3 flex-1">
           <span class="text-accent">{{ icon.file_text() }}</span>
           <p class="text-ink-200">Превью недоступно для этого типа файла.</p>
-          <a class="btn btn-primary" href="/api/library/{{ selected.id }}/raw?dl=1">
+          <a class="hidden md:inline-flex btn btn-primary" href="{{ dl_url }}">
             {{ icon.download() }}<span>Скачать</span>
           </a>
+          <button type="button" class="md:hidden library-blob-download btn btn-primary min-h-[48px] justify-center w-full max-w-xs">
+            {{ icon.download() }}<span>Сохранить файл</span>
+          </button>
         </div>
       {% endif %}
-      {% else %}
+      {% elif not files %}
       <div class="flex flex-col items-center justify-center text-center px-6 py-20 gap-3 flex-1 text-ink-300">
         <span class="opacity-60">{{ icon.folder_lg() }}</span>
         <p>В этой теме пока нет файлов.</p>
+      </div>
+      {% else %}
+      <div class="flex flex-col items-center justify-center text-center px-6 py-16 lg:py-20 gap-3 flex-1 text-ink-300">
+        <span class="opacity-60">{{ icon.file_text() }}</span>
+        <p class="text-ink-200">Выбери файл в списке слева.</p>
       </div>
       {% endif %}
     </section>
@@ -170,6 +217,133 @@
 {% endif %}
 {% endblock %}
 {% block extra_scripts %}
+{% if view == 'files' and selected %}
+<script>
+(function () {
+  var meta = document.getElementById("library-file-actions");
+  if (!meta) return;
+
+  function cfg() {
+    return {
+      dl: meta.getAttribute("data-dl-url"),
+      view: meta.getAttribute("data-view-url"),
+      name: meta.getAttribute("data-filename") || "file",
+    };
+  }
+
+  function isMobile() {
+    return window.matchMedia("(max-width: 767px)").matches;
+  }
+
+  async function blobDownload(btn) {
+    var c = cfg();
+    if (!c.dl || !btn) return;
+    var label = btn.querySelector("span:last-child");
+    var old = label ? label.textContent : btn.textContent;
+    btn.disabled = true;
+    if (label) label.textContent = "…";
+    try {
+      var r = await fetch(c.dl, { credentials: "same-origin" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      var blob = await r.blob();
+      var u = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = u;
+      a.download = c.name;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () {
+        URL.revokeObjectURL(u);
+      }, 5000);
+    } catch (e) {
+      alert("Не удалось скачать. Попробуй позже или с компьютера.");
+    } finally {
+      btn.disabled = false;
+      if (label) label.textContent = old;
+    }
+  }
+
+  document.querySelectorAll(".library-blob-download").forEach(function (btn) {
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      blobDownload(btn);
+    });
+  });
+
+  var mount = document.getElementById("library-pdf-mobile");
+  if (!mount || !isMobile()) return;
+
+  var statusEl = document.getElementById("library-pdf-mobile-status");
+  var pagesEl = document.getElementById("library-pdf-mobile-pages");
+  var viewUrl = cfg().view;
+  if (!viewUrl || !statusEl || !pagesEl) return;
+
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.src = src;
+      s.crossOrigin = "anonymous";
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  statusEl.textContent = "Загрузка просмотрщика…";
+
+  loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js")
+    .then(function () {
+      if (typeof pdfjsLib === "undefined") {
+        statusEl.textContent = "Не удалось загрузить PDF.js.";
+        return null;
+      }
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      statusEl.textContent = "Открываем документ…";
+      return pdfjsLib.getDocument({ url: viewUrl, withCredentials: true }).promise;
+    })
+    .then(function (pdf) {
+      if (!pdf) return;
+      statusEl.textContent = "";
+      var n = pdf.numPages;
+      var cw = Math.max(280, mount.clientWidth - 16);
+
+      function renderPage(pi) {
+        return pdf.getPage(pi).then(function (page) {
+          var base = page.getViewport({ scale: 1 });
+          var scale = Math.min(2.4, Math.max(0.9, (cw - 8) / base.width));
+          var viewport = page.getViewport({ scale: scale });
+          var canvas = document.createElement("canvas");
+          canvas.className =
+            "block w-full max-w-full mx-auto my-2 rounded-lg border border-ink-600 bg-white";
+          var ctx = canvas.getContext("2d");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          pagesEl.appendChild(canvas);
+          return page.render({ canvasContext: ctx, viewport: viewport }).promise;
+        });
+      }
+
+      var chain = Promise.resolve();
+      for (var p = 1; p <= n; p++) {
+        (function (pi) {
+          chain = chain.then(function () {
+            return renderPage(pi);
+          });
+        })(p);
+      }
+      return chain;
+    })
+    .catch(function (err) {
+      console.error(err);
+      statusEl.textContent =
+        "Не удалось показать PDF внутри хаба. Попробуй «Сохранить копию PDF» или открой с компьютера.";
+    });
+})();
+</script>
+{% endif %}
 {% if is_admin and view == 'files' %}
 <script>
 (function () {

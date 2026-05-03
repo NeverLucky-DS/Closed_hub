@@ -93,23 +93,25 @@
     </div>
   </aside>
 
-  {# Top-nav (mobile) #}
-  <header class="md:hidden sticky top-0 z-30 flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 bg-ink-900/85 backdrop-blur border-b border-ink-600">
-    <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-2xl border min-h-[3rem] {% if nav == 'home' %}border-accent/35 bg-ink-800/50{% else %}border-ink-600/80 bg-ink-800/30{% endif %}">
-      <span class="text-accent">{{ icon.logo() }}</span>
-      <span class="font-semibold text-base">Хаб</span>
-    </a>
-    <a href="/logout" class="text-ink-300 text-sm">{{ icon.logout() }}</a>
-  </header>
-  <nav class="md:hidden flex overflow-x-auto gap-1 px-2 py-2 bg-ink-900 border-b border-ink-600 text-sm">
-    <a href="/library" class="nav-link whitespace-nowrap {{ 'active' if nav == 'library' else '' }}">{{ icon.folder() }}<span>Файлы</span></a>
-    <a href="/feed" class="nav-link whitespace-nowrap {{ 'active' if nav == 'feed' else '' }}">{{ icon.layers() }}<span>Новости</span></a>
-    <a href="/today" class="nav-link whitespace-nowrap {{ 'active' if nav == 'today' else '' }}">{{ icon.flame() }}<span>Выжимка</span></a>
-    <a href="/hackathons" class="nav-link whitespace-nowrap {{ 'active' if nav == 'hackathons' else '' }}">{{ icon.sparkle() }}<span>Хакатоны</span></a>
-    <a href="/companies" class="nav-link whitespace-nowrap {{ 'active' if nav == 'companies' else '' }}">{{ icon.building() }}<span>Компании</span></a>
-    <a href="/people" class="nav-link whitespace-nowrap {{ 'active' if nav == 'people' else '' }}">{{ icon.users() }}<span>Люди</span></a>
-    <a href="/me" class="nav-link whitespace-nowrap {{ 'active' if nav == 'me' else '' }}">{{ icon.user() }}<span>Профиль</span></a>
-  </nav>
+  {# Мобильная шапка + табы — один sticky-блок; высота в --app-mobile-chrome-h для вложенных sticky (библиотека и т.д.) #}
+  <div id="mobile-chrome" class="md:hidden sticky top-0 z-30">
+    <header class="flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 bg-ink-900/85 backdrop-blur border-b border-ink-600">
+      <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-2xl border min-h-[3rem] {% if nav == 'home' %}border-accent/35 bg-ink-800/50{% else %}border-ink-600/80 bg-ink-800/30{% endif %}">
+        <span class="text-accent">{{ icon.logo() }}</span>
+        <span class="font-semibold text-base">Хаб</span>
+      </a>
+      <a href="/logout" class="text-ink-300 text-sm">{{ icon.logout() }}</a>
+    </header>
+    <nav class="flex overflow-x-auto gap-1 px-2 py-2 bg-ink-900 border-b border-ink-600 text-sm">
+      <a href="/library" class="nav-link whitespace-nowrap {{ 'active' if nav == 'library' else '' }}">{{ icon.folder() }}<span>Файлы</span></a>
+      <a href="/feed" class="nav-link whitespace-nowrap {{ 'active' if nav == 'feed' else '' }}">{{ icon.layers() }}<span>Новости</span></a>
+      <a href="/today" class="nav-link whitespace-nowrap {{ 'active' if nav == 'today' else '' }}">{{ icon.flame() }}<span>Выжимка</span></a>
+      <a href="/hackathons" class="nav-link whitespace-nowrap {{ 'active' if nav == 'hackathons' else '' }}">{{ icon.sparkle() }}<span>Хакатоны</span></a>
+      <a href="/companies" class="nav-link whitespace-nowrap {{ 'active' if nav == 'companies' else '' }}">{{ icon.building() }}<span>Компании</span></a>
+      <a href="/people" class="nav-link whitespace-nowrap {{ 'active' if nav == 'people' else '' }}">{{ icon.users() }}<span>Люди</span></a>
+      <a href="/me" class="nav-link whitespace-nowrap {{ 'active' if nav == 'me' else '' }}">{{ icon.user() }}<span>Профиль</span></a>
+    </nav>
+  </div>
 
   <main class="flex-1 md:ml-60 px-4 md:px-10 py-6 md:py-10 max-w-6xl pb-[max(1.5rem,env(safe-area-inset-bottom))]">
     {% block main %}{% endblock %}
@@ -121,5 +123,23 @@
 </main>
 {% endif %}
 {% block extra_scripts %}{% endblock %}
+<script>
+(function () {
+  var el = document.getElementById("mobile-chrome");
+  if (!el) return;
+  function sync() {
+    document.documentElement.style.setProperty(
+      "--app-mobile-chrome-h",
+      el.offsetHeight + "px"
+    );
+  }
+  sync();
+  if (typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(sync).observe(el);
+  } else {
+    window.addEventListener("resize", sync);
+  }
+})();
+</script>
 </body>
 </html>

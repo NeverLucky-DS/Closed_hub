@@ -40,6 +40,13 @@ _static_dir = Path(__file__).resolve().parent / "static"
 _auth_rl: dict[str, float] = {}
 _RL_WINDOW_SEC = 55.0
 
+_verify_last_attempt: dict[str, float] = {}
+_verify_fail_count: dict[str, int] = {}
+_verify_locked_until: dict[str, float] = {}
+_VERIFY_MIN_INTERVAL_SEC = 3.0
+_VERIFY_FAIL_LOCK_AFTER = 3
+_VERIFY_LOCK_SEC = 300.0
+
 _REACTION_EMOJIS = ("👍", "❤️", "🔥", "🤔", "🎉")
 
 
@@ -50,6 +57,39 @@ def _rl_allow(key: str) -> bool:
         return False
     _auth_rl[key] = now
     return True
+
+
+def _verify_throttle_check(key: str) -> None:
+    now = time.time()
+    locked_until = _verify_locked_until.get(key, 0.0)
+    if locked_until > now:
+        wait = int(max(1.0, locked_until - now))
+        raise HTTPException(
+            status_code=429,
+            detail=f"Слишком много неверных попыток. Повторите через {wait} с.",
+        )
+    last = _verify_last_attempt.get(key, 0.0)
+    if now - last < _VERIFY_MIN_INTERVAL_SEC:
+        raise HTTPException(
+            status_code=429,
+            detail="Подождите несколько секунд перед следующей попыткой.",
+        )
+    _verify_last_attempt[key] = now
+
+
+def _verify_register_failure(key: str) -> None:
+    now = time.time()
+    n = _verify_fail_count.get(key, 0) + 1
+    if n >= _VERIFY_FAIL_LOCK_AFTER:
+        _verify_fail_count.pop(key, None)
+        _verify_locked_until[key] = now + _VERIFY_LOCK_SEC
+    else:
+        _verify_fail_count[key] = n
+
+
+def _verify_register_success(key: str) -> None:
+    _verify_fail_count.pop(key, None)
+    _verify_locked_until.pop(key, None)
 
 
 def _otp_hash(secret: str, code: str) -> str:
@@ -568,23 +608,33 @@ async def auth_verify(request: Request, pool=Depends(pool_dep)):
         uid = int(uid_raw)
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Нужен числовой Telegram ID")
+
+    client_ip = request.client.host if request.client else ""
+    vkey = f"{client_ip}:{uid}"
+    _verify_throttle_check(vkey)
+
     if len(code) != 6 or not code.isdigit():
+        _verify_register_failure(vkey)
         raise HTTPException(status_code=400, detail="Неверный код")
 
     if await repo.member_status(pool, uid) != "active":
+        _verify_register_failure(vkey)
         raise HTTPException(status_code=403, detail="Нет доступа")
 
     row = await repo.fetch_valid_web_login_code(pool, uid)
     if not row:
+        _verify_register_failure(vkey)
         raise HTTPException(status_code=400, detail="Код просрочен или уже использован")
 
     expect = row["code_hash"]
     if not hmac.compare_digest(expect, _otp_hash(secret, code)):
+        _verify_register_failure(vkey)
         raise HTTPException(status_code=400, detail="Неверный код")
 
     await repo.consume_web_login_code(pool, int(row["id"]))
     await repo.ensure_member_profile_row(pool, uid)
     request.session["uid"] = uid
+    _verify_register_success(vkey)
     return JSONResponse({"ok": True})
 
 
@@ -872,6 +922,17 @@ async def page_library(
     cats = await repo.list_categories_with_counts(pool)
 
     if not cat:
+        if file is not None:
+            frow = await repo.get_file_record(pool, int(file))
+            if (
+                frow
+                and str(frow.get("status") or "") == "confirmed"
+                and frow.get("confirmed_category")
+            ):
+                return RedirectResponse(
+                    f"/library?cat={frow['confirmed_category']}&file={int(file)}",
+                    status_code=302,
+                )
         return _templates.TemplateResponse(
             request,
             "library.html",
@@ -889,10 +950,8 @@ async def page_library(
     cat_label = next((c["label_ru"] for c in cats if c["slug"] == cat), cat)
     files = await repo.list_library_files(pool, limit=500, category_slug=cat)
     selected = None
-    if file:
+    if file is not None:
         selected = next((f for f in files if int(f["id"]) == int(file)), None)
-    if selected is None and files:
-        selected = files[0]
     companies_attach = await repo.list_companies_compact(pool, 100)
     attach_err = request.query_params.get("attach_err")
     return _templates.TemplateResponse(
@@ -937,7 +996,12 @@ async def library_attach_company(
         q = f"cat={cat}&file={file_id}&attach_err=bad_params" if cat else "attach_err=bad_params"
         return RedirectResponse(f"/library?{q}", status_code=303)
     frow = await repo.get_file_record(pool, fid)
-    if not frow or int(frow["uploaded_by"]) != uid:
+    if not frow:
+        return RedirectResponse(
+            f"/library?cat={cat}&file={fid}&attach_err=not_file",
+            status_code=303,
+        )
+    if int(frow["uploaded_by"]) != uid and not is_web_admin(uid):
         return RedirectResponse(
             f"/library?cat={cat}&file={fid}&attach_err=forbidden",
             status_code=303,
