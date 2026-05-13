@@ -13,6 +13,7 @@ from db.pool import close_pool, create_pool
 from db.repo import seed_whitelist_and_members
 from db.schema_patch import apply_pending_patches
 from services.event_summary_worker import start_event_summary_worker, stop_event_summary_worker
+from services.telegram_http import build_telegram_bot_httpx_request
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,6 +55,7 @@ def main() -> None:
     app = (
         Application.builder()
         .token(settings.telegram_bot_token)
+        .request(build_telegram_bot_httpx_request(settings))
         .post_init(post_init)
         .post_shutdown(post_shutdown)
         .build()

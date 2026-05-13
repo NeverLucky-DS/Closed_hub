@@ -13,7 +13,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-import httpx
 import mimetypes
 from datetime import date, datetime, timezone
 from datetime import time as dt_time
@@ -29,6 +28,7 @@ from db import repo
 from db.pool import close_pool, create_pool
 from db.schema_patch import apply_pending_patches
 from services.file_storage import company_root, library_root, profile_root
+from services.telegram_http import telegram_api_post
 from services import interviews_store
 from utils.company_slug import slugify_company_name
 
@@ -426,32 +426,30 @@ async def _send_telegram_code(chat_id: int, code: str) -> None:
     token = settings.telegram_bot_token
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     text = f"Код для входа на сайт хаба: <b>{code}</b>\n\nЕсли это не вы — проигнорируйте."
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        r = await client.post(
-            url,
-            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+    r = await telegram_api_post(
+        url,
+        json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+    )
+    data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if not r.is_success or not data.get("ok", False):
+        desc = data.get("description", r.text[:200])
+        log.warning("telegram sendMessage failed: %s", desc)
+        raise HTTPException(
+            status_code=502,
+            detail="Не удалось отправить код в Telegram. Откройте бота и нажмите /start.",
         )
-        data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
-        if not r.is_success or not data.get("ok", False):
-            desc = data.get("description", r.text[:200])
-            log.warning("telegram sendMessage failed: %s", desc)
-            raise HTTPException(
-                status_code=502,
-                detail="Не удалось отправить код в Telegram. Откройте бота и нажмите /start.",
-            )
 
 
 async def _telegram_try_delete_message(chat_id: int | str, message_id: int) -> bool:
     settings = get_settings()
     token = settings.telegram_bot_token
     url = f"https://api.telegram.org/bot{token}/deleteMessage"
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        r = await client.post(url, json={"chat_id": chat_id, "message_id": message_id})
-        data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
-        if r.is_success and data.get("ok", False):
-            return True
-        log.warning("telegram deleteMessage failed: %s", data.get("description", r.text[:200]))
-        return False
+    r = await telegram_api_post(url, json={"chat_id": chat_id, "message_id": message_id})
+    data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if r.is_success and data.get("ok", False):
+        return True
+    log.warning("telegram deleteMessage failed: %s", data.get("description", r.text[:200]))
+    return False
 
 
 @asynccontextmanager

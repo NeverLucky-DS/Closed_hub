@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: closedhub
       POSTGRES_DB: closedhub
     ports:
-      - "5432:5432"
+      # С хоста: localhost:${POSTGRES_HOST_PORT}. Внутри сети compose сервисы ходят на postgres:5432.
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
@@ -47,7 +48,7 @@ services:
     volumes:
       - ./storage:/app/storage
     ports:
-      - "8000:8000"
+      - "${WEB_HOST_PORT:-8001}:8000"
     command: ["uv", "run", "--no-sync", "python", "-m", "web.main"]
     restart: unless-stopped
 

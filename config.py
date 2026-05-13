@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     )
 
     telegram_bot_token: str
+    # HTTP или SOCKS5 URL (через запятую — запасные; см. .env.example). Не MTProto-secret.
+    telegram_proxy_url: Optional[str] = None
     mistral_api_key: str
     # Опционально: отдельный ключ для цепочки «новости на сайт» (dedup + саммари), без конкуренции с остальным ботом.
     mistral_api_key_for_site: Optional[str] = None
