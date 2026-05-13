@@ -669,6 +669,74 @@ async def list_resource_links(
         return list(rows)
 
 
+async def search_library_files(
+    pool: asyncpg.Pool,
+    query: str,
+    limit: int = 15,
+) -> list[asyncpg.Record]:
+    q = f"%{query.strip()}%"
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT f.id, f.storage_path, f.sha256, f.mime_type, f.summary,
+                   f.confirmed_category, f.original_filename, f.subject_tags,
+                   f.uploaded_by, f.uploader_handle, f.created_at, f.confirmed_at,
+                   COALESCE(c.label_ru, f.confirmed_category) AS category_label
+            FROM files f
+            LEFT JOIN file_categories c ON c.slug = f.confirmed_category
+            WHERE f.status = 'confirmed'
+              AND (
+                f.original_filename ILIKE $2
+                OR f.summary ILIKE $2
+                OR f.subject_tags ILIKE $2
+                OR f.confirmed_category ILIKE $2
+                OR c.label_ru ILIKE $2
+              )
+            ORDER BY f.confirmed_at DESC NULLS LAST, f.created_at DESC
+            LIMIT $1
+            """,
+            limit,
+            q,
+        )
+        return list(rows)
+
+
+async def search_resource_links(
+    pool: asyncpg.Pool,
+    query: str,
+    limit: int = 15,
+) -> tuple[list[asyncpg.Record], bool]:
+    q = (query or "").strip()
+    pat = f"%{q}%"
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT l.id, l.url, l.title, l.user_note,
+                   COALESCE(l.ai_summary, '') AS summary,
+                   CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS topic,
+                   l.created_at
+            FROM resource_links l
+            INNER JOIN resource_topics t ON t.id = l.topic_id
+            LEFT JOIN resource_topics p ON p.id = t.parent_id
+            WHERE (
+                $1::text = ''
+                OR l.title ILIKE $2
+                OR l.url ILIKE $2
+                OR l.user_note ILIKE $2
+                OR COALESCE(l.ai_summary, '') ILIKE $2
+                OR t.title ILIKE $2
+                OR COALESCE(p.title, '') ILIKE $2
+            )
+            ORDER BY l.created_at DESC
+            LIMIT $3
+            """,
+            q,
+            pat,
+            limit,
+        )
+        return list(rows), True
+
+
 _EVENTS_ACTIVE_FILTER = """
     status = 'published'
     AND (ends_at IS NULL OR ends_at >= now())
