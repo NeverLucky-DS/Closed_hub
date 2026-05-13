@@ -14,7 +14,7 @@
 <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
   {% for r in profiles %}
   {% set photos = r.photo_paths | valid_photos %}
-  <article class="card p-0 overflow-hidden flex flex-col ring-1 ring-white/[0.03] hover:border-accent/25 border border-ink-600/80 transition-colors">
+  <article class="list-row p-0 overflow-hidden flex flex-col">
     <div class="p-5 flex gap-4 items-start flex-1">
       <a href="/people/{{ r.telegram_user_id }}" class="flex-shrink-0">
         {% if photos and photos[0] %}
@@ -46,9 +46,9 @@
         <p class="text-sm text-ink-300 mt-2 line-clamp-3 leading-relaxed">{{ r.bio }}</p>
         {% endif %}
         <div class="flex flex-wrap gap-1.5 mt-3">
-          {% if r.hf_url %}<span class="text-[10px] font-medium uppercase tracking-wide px-2 py-0.5 rounded-md bg-violet-500/15 text-violet-200 ring-1 ring-violet-500/25">HF</span>{% endif %}
-          {% if r.kaggle_url %}<span class="text-[10px] font-medium uppercase tracking-wide px-2 py-0.5 rounded-md bg-sky-500/15 text-sky-200 ring-1 ring-sky-500/25">Kaggle</span>{% endif %}
-          {% if r.leetcode_url %}<span class="text-[10px] font-medium uppercase tracking-wide px-2 py-0.5 rounded-md bg-amber-500/12 text-amber-100 ring-1 ring-amber-500/25">LeetCode</span>{% endif %}
+          {% if r.hf_url %}<span class="chip chip-accent uppercase text-[10px]">HF</span>{% endif %}
+          {% if r.kaggle_url %}<span class="chip chip-accent uppercase text-[10px]">Kaggle</span>{% endif %}
+          {% if r.leetcode_url %}<span class="chip chip-accent uppercase text-[10px]">LeetCode</span>{% endif %}
         </div>
         <a href="/people/{{ r.telegram_user_id }}" class="inline-flex items-center gap-1 mt-3 text-sm font-medium text-accent hover:text-accent-2">
           Открыть профиль {{ icon.chevron_right() }}
@@ -69,7 +69,7 @@
   {% endfor %}
 </div>
 {% else %}
-<div class="card p-10 text-center">
+<div class="empty-state p-10">
   <div class="mx-auto w-12 h-12 rounded-xl bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-accent">{{ icon.users() }}</div>
   <p class="mt-4 text-ink-200">Пока никто не заполнил GitHub в профиле.</p>
   <p class="mt-1 text-sm text-ink-300">Будь первым — открой «Профиль» и добавь ссылку.</p>

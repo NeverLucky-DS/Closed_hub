@@ -11,7 +11,7 @@
 </header>
 
 {% if events %}
-<div class="card p-5 md:p-7 max-w-2xl">
+<div class="panel p-5 md:p-7 max-w-2xl">
   <ul class="space-y-3 list-none pl-0">
     {% for e in events %}
     {% set hdr = e | event_header %}
@@ -40,14 +40,14 @@
   </ul>
 </div>
 {% else %}
-<div class="card p-10 text-center max-w-xl">
+<div class="empty-state p-10 max-w-xl">
   <div class="mx-auto w-12 h-12 rounded-xl bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-accent">{{ icon.flame() }}</div>
   <p class="mt-4 text-ink-200">Сейчас выжимка пустая.</p>
   <p class="mt-1 text-sm text-ink-300">Когда появятся свежие анонсы или дедлайны — они покажутся здесь. Полный список — в «Новости».</p>
 </div>
 {% endif %}
 
-<dialog id="digest-end-dialog" class="rounded-2xl border border-ink-600 bg-ink-800 text-ink-100 p-0 shadow-soft max-w-md w-[calc(100%-2rem)] backdrop:bg-black/60">
+<dialog id="digest-end-dialog" class="panel text-ink-100 p-0 max-w-md w-[calc(100%-2rem)] backdrop:bg-black/60">
   <form method="dialog" class="p-5 md:p-6">
     <h2 class="text-sm uppercase tracking-[0.15em] text-ink-300">Дата окончания</h2>
     <p id="digest-dialog-title" class="mt-2 text-base font-medium text-ink-100 leading-snug"></p>

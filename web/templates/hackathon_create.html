@@ -11,10 +11,10 @@
 </header>
 
 {% if error %}
-<div class="mb-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{{ error }}</div>
+<div class="alert alert-danger mb-4">{{ error }}</div>
 {% endif %}
 
-<form method="post" action="/hackathons/create" class="card p-6 max-w-xl space-y-4">
+<form method="post" action="/hackathons/create" class="panel p-6 max-w-xl space-y-4">
   <div>
     <label class="block text-sm text-ink-200">Название</label>
     <input name="title" required maxlength="200" class="field mt-1.5 w-full" placeholder="Например: ML-хакатон, команда Альфа">

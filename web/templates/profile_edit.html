@@ -11,7 +11,7 @@
 </header>
 
 {% if error %}
-<div class="card p-3 mb-5 border-rose-500/30 text-rose-300 text-sm">{{ error }}</div>
+<div class="alert alert-danger mb-5">{{ error }}</div>
 {% endif %}
 
 {% set photos = p.photo_paths | valid_photos %}
@@ -19,7 +19,7 @@
 
 <form method="post" action="/me" enctype="multipart/form-data" class="grid grid-cols-1 lg:grid-cols-[1fr_22rem] gap-5">
   <div class="space-y-5">
-    <div class="card p-5 md:p-6 space-y-5">
+    <div class="panel p-5 md:p-6 space-y-5">
       <div>
         <label for="display_name" class="block text-sm text-ink-200 mb-1.5">Имя на сайте</label>
         <input id="display_name" name="display_name" type="text" class="field"
@@ -38,8 +38,8 @@
       </div>
     </div>
 
-    <div class="card p-5 md:p-6 space-y-5">
-      <div class="text-xs uppercase tracking-[0.18em] text-ink-400 font-medium mb-1">Платформы и учёба</div>
+    <div class="panel p-5 md:p-6 space-y-5">
+      <div class="section-title mb-1">Платформы и учёба</div>
       <p class="text-xs text-ink-500 -mt-2 mb-2">Ссылки только с <span class="num">https://</span> — профиль HF, Kaggle, LeetCode.</p>
       <div>
         <label for="hf_url" class="block text-sm text-ink-200 mb-1.5">Hugging Face</label>
@@ -76,7 +76,7 @@
       </div>
     </div>
 
-    <div class="card p-5 md:p-6 space-y-5">
+    <div class="panel p-5 md:p-6 space-y-5">
       <div>
         <label class="block text-sm text-ink-200 mb-1.5">Резюме (PDF, до {{ hub_settings.web_max_resume_mb }} МБ)</label>
         {% if p.resume_path %}
@@ -88,14 +88,13 @@
           </label>
         </div>
         {% endif %}
-        <input id="resume" name="resume" type="file" accept="application/pdf,.pdf" class="field py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-ink-700 file:px-3 file:py-1.5 file:text-sm">
+        <input id="resume" name="resume" type="file" accept="application/pdf,.pdf" class="file-field">
         <p class="mt-1 text-xs text-ink-300">Новый файл заменит старый.</p>
       </div>
 
       <div>
         <label class="block text-sm text-ink-200 mb-1.5">Фото (до 3 шт., JPEG/PNG/WebP)</label>
-        <label id="dropzone" for="photos"
-               class="block cursor-pointer border-2 border-dashed border-ink-600 rounded-xl p-6 text-center text-sm text-ink-300 hover:border-accent/60 transition">
+        <label id="dropzone" for="photos" class="dropzone">
           <span class="inline-flex items-center gap-2">{{ icon.plus() }} Перетащи файлы сюда или кликни</span>
           <p class="mt-1 text-xs text-ink-300">Новые фото заменят старые</p>
         </label>
@@ -110,8 +109,8 @@
   </div>
 
   <aside class="space-y-5">
-    <div class="card p-5">
-      <div class="text-xs uppercase tracking-[0.18em] text-ink-300 mb-3">Превью</div>
+    <div class="panel p-5">
+      <div class="section-title mb-3">Превью</div>
       <div class="flex items-start gap-3">
         {% if photos and photos[0] %}
         <img src="/media/profile/{{ uid }}/{{ photos[0].split('/')[-1] }}" class="w-14 h-14 rounded-xl object-cover" alt="">
@@ -134,8 +133,8 @@
     </div>
 
     {% if photos %}
-    <div class="card p-5">
-      <div class="text-xs uppercase tracking-[0.18em] text-ink-300 mb-3">Текущие фото</div>
+    <div class="panel p-5">
+      <div class="section-title mb-3">Текущие фото</div>
       <div class="grid grid-cols-3 gap-2">
         {% for rel in photos %}
         <img src="/media/profile/{{ uid }}/{{ rel.split('/')[-1] }}" alt="" class="rounded-lg object-cover w-full h-20 border border-ink-600">

@@ -13,7 +13,7 @@
 {% if teams %}
 <div class="grid gap-4 md:grid-cols-2 max-w-4xl">
   {% for t in teams %}
-  <a href="/hackathons/{{ t.id }}" class="card card-hover p-5 block">
+  <a href="/hackathons/{{ t.id }}" class="list-row p-5 block">
     <h2 class="font-semibold text-ink-100 leading-snug">{{ t.title }}</h2>
     <p class="mt-2 text-sm text-ink-300 line-clamp-2">{{ t.description or "Без описания" }}</p>
     <div class="mt-4 flex items-center gap-1 flex-wrap">
@@ -36,7 +36,7 @@
   {% endfor %}
 </div>
 {% else %}
-<div class="card p-10 text-center max-w-lg">
+<div class="empty-state p-10 max-w-lg">
   <div class="mx-auto w-12 h-12 rounded-xl bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-accent">{{ icon.sparkle() }}</div>
   <p class="mt-4 text-ink-200">Пока нет открытых команд.</p>
   <p class="mt-1 text-sm text-ink-300">Создай первую — кнопка выше.</p>

@@ -6,7 +6,7 @@
 </a>
 
 {% set photos = p.photo_paths | valid_photos %}
-<section class="card p-6 md:p-8">
+<section class="panel p-6 md:p-8">
   <div class="flex flex-col sm:flex-row sm:items-start gap-5 sm:gap-8">
       {% if photos and photos[0] %}
       <img src="/media/profile/{{ pid }}/{{ photos[0].split('/')[-1] }}"

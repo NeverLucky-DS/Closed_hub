@@ -20,7 +20,7 @@
   {% set thumb = e | event_thumb %}
   {% set mine_e = re_mine.get(e.id) %}
   {% set totals = re_totals.get(e.id, {}) %}
-  <article id="e-{{ e.id }}" class="card card-hover overflow-hidden flex flex-row gap-0 scroll-mt-24">
+  <article id="e-{{ e.id }}" class="list-row overflow-hidden flex flex-row gap-0 scroll-mt-24">
     <div class="w-[7.25rem] md:w-32 flex-shrink-0 self-stretch min-h-[5.5rem] bg-ink-700 border-r border-ink-600">
       {% if thumb %}
       <img src="{{ thumb }}" alt="" class="w-full h-full object-cover min-h-[5.5rem]" loading="lazy" width="128" height="96">
@@ -50,7 +50,7 @@
             {% for em in reaction_emojis %}
               {% set cnt = totals.get(em, 0) %}
               {% if cnt > 0 or mine_e == em %}
-              <button type="button" data-emoji="{{ em }}" class="react-chip flex items-center gap-0.5 rounded-full px-2 py-0.5 text-sm border transition {% if mine_e == em %}border-accent bg-accent/15{% else %}border-ink-600 bg-ink-800/70 hover:border-ink-500{% endif %}">
+              <button type="button" data-emoji="{{ em }}" class="react-chip chip {% if mine_e == em %}chip-accent{% else %}hover:border-ink-500{% endif %}">
                 <span>{{ em }}</span>{% if cnt > 0 %}<span class="text-[11px] num text-ink-300">{{ cnt }}</span>{% endif %}
               </button>
               {% endif %}
@@ -87,7 +87,7 @@
   {% endfor %}
 </div>
 {% else %}
-<div class="card p-10 text-center">
+<div class="empty-state p-10">
   <div class="mx-auto w-12 h-12 rounded-xl bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-accent">{{ icon.calendar() }}</div>
   <p class="mt-4 text-ink-200">Пока нет новостей с открытой датой.</p>
   <p class="mt-1 text-sm text-ink-300">Как только в боте появится анонс — он сразу окажется здесь.</p>
@@ -117,8 +117,8 @@ document.addEventListener("pageshow", function (e) {
       var cnt = totals[em] || 0;
       if (cnt > 0 || mine === em) {
         var active = mine === em;
-        html += '<button type="button" data-emoji="' + em + '" class="react-chip flex items-center gap-0.5 rounded-full px-2 py-0.5 text-sm border transition ' +
-          (active ? "border-accent bg-accent/15" : "border-ink-600 bg-ink-800/70 hover:border-ink-500") + '">' +
+        html += '<button type="button" data-emoji="' + em + '" class="react-chip chip ' +
+          (active ? "chip-accent" : "hover:border-ink-500") + '">' +
           "<span>" + em + "</span>" + (cnt > 0 ? '<span class="text-[11px] num text-ink-300">' + cnt + "</span>" : "") + "</button>";
       }
     });

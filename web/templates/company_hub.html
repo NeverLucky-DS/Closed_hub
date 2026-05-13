@@ -42,11 +42,11 @@
   </header>
 
   {% if error %}
-  <div class="mb-6 rounded-xl border border-amber-500/35 bg-amber-500/[0.09] px-4 py-3 text-sm text-amber-100/95 leading-relaxed">{{ error }}</div>
+  <div class="alert alert-warn mb-6">{{ error }}</div>
   {% endif %}
 
   {% if can_manage_company %}
-  <section class="mb-8 rounded-2xl border border-ink-500/70 bg-ink-800/35 backdrop-blur-sm p-5 md:p-6 shadow-soft">
+  <section class="panel mb-8 p-5 md:p-6 backdrop-blur-sm">
     <div class="flex items-start gap-3 mb-4">
       <div class="w-10 h-10 rounded-xl bg-accent/12 ring-1 ring-accent/25 flex items-center justify-center text-accent shrink-0">
         {{ icon.file_image() }}
@@ -60,7 +60,7 @@
       <label class="flex-1 min-w-[12rem] cursor-pointer">
         <span class="sr-only">Файл изображения</span>
         <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required
-               class="block w-full text-sm text-ink-300 file:cursor-pointer file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:bg-ink-700 file:text-ink-100 file:font-medium file:ring-1 file:ring-ink-500 hover:file:bg-ink-600 transition-colors">
+               class="file-field">
       </label>
       <button type="submit" class="btn btn-primary px-5 py-2.5 rounded-xl font-semibold">Закрепить фото</button>
     </form>
@@ -68,7 +68,7 @@
     {% if gallery %}
     <form method="post" action="/companies/{{ company.slug }}/photo-clear" class="mt-4 pt-4 border-t border-ink-600/80"
           onsubmit="return confirm('Убрать обложку? Файл на диске будет удалён.');">
-      <button type="submit" class="btn btn-ghost text-rose-300/95 hover:text-rose-200 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/25 rounded-xl text-sm py-2 px-3">
+      <button type="submit" class="btn btn-danger rounded-xl text-sm py-2 px-3">
         {{ icon.trash() }} Убрать обложку
       </button>
     </form>
@@ -76,10 +76,10 @@
   </section>
   {% endif %}
 
-  <p class="text-xs uppercase tracking-[0.2em] text-ink-500 font-medium mb-4">Разделы карточки</p>
+  <p class="section-title mb-4">Разделы карточки</p>
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
-    <a href="/companies/{{ company.slug }}/hr" class="group relative rounded-2xl p-[1px] bg-gradient-to-br from-white/[0.12] via-ink-600 to-ink-700 hover:from-accent/45 hover:via-accent/15 hover:to-ink-700 transition-all duration-300 shadow-soft">
-      <div class="rounded-[15px] bg-ink-800/98 backdrop-blur-sm p-6 h-full flex flex-col gap-3 min-h-[9.5rem] ring-1 ring-ink-600/60 group-hover:ring-accent/35 transition-all">
+    <a href="/companies/{{ company.slug }}/hr" class="group panel panel-hover block p-6 min-h-[9.5rem]">
+      <div class="h-full flex flex-col gap-3">
         <div class="w-11 h-11 rounded-xl bg-accent/12 flex items-center justify-center text-accent ring-1 ring-accent/20 group-hover:scale-105 transition-transform">
           {{ icon.users() }}
         </div>
@@ -88,8 +88,8 @@
         <span class="text-xs text-ink-500 mt-auto font-medium num">{{ tabs.hr_n }} в карточке</span>
       </div>
     </a>
-    <a href="/companies/{{ company.slug }}/interviews" class="group relative rounded-2xl p-[1px] bg-gradient-to-br from-white/[0.12] via-ink-600 to-ink-700 hover:from-accent-2/35 hover:via-accent/10 hover:to-ink-700 transition-all duration-300 shadow-soft">
-      <div class="rounded-[15px] bg-ink-800/98 backdrop-blur-sm p-6 h-full flex flex-col gap-3 min-h-[9.5rem] ring-1 ring-ink-600/60 group-hover:ring-accent-2/30 transition-all">
+    <a href="/companies/{{ company.slug }}/interviews" class="group panel panel-hover block p-6 min-h-[9.5rem]">
+      <div class="h-full flex flex-col gap-3">
         <div class="w-11 h-11 rounded-xl bg-accent-2/12 flex items-center justify-center text-accent-2 ring-1 ring-accent-2/25 group-hover:scale-105 transition-transform">
           {{ icon.book() }}
         </div>
@@ -98,8 +98,8 @@
         <span class="text-xs text-ink-500 mt-auto font-medium num">{{ tabs.reviews_n }} записей</span>
       </div>
     </a>
-    <a href="/companies/{{ company.slug }}/files" class="group relative rounded-2xl p-[1px] bg-gradient-to-br from-white/[0.12] via-ink-600 to-ink-700 hover:from-sky-400/25 hover:via-accent/10 hover:to-ink-700 transition-all duration-300 shadow-soft">
-      <div class="rounded-[15px] bg-ink-800/98 backdrop-blur-sm p-6 h-full flex flex-col gap-3 min-h-[9.5rem] ring-1 ring-ink-600/60 group-hover:ring-sky-400/25 transition-all">
+    <a href="/companies/{{ company.slug }}/files" class="group panel panel-hover block p-6 min-h-[9.5rem]">
+      <div class="h-full flex flex-col gap-3">
         <div class="w-11 h-11 rounded-xl bg-sky-400/10 flex items-center justify-center text-sky-300 ring-1 ring-sky-400/20 group-hover:scale-105 transition-transform">
           {{ icon.folder() }}
         </div>
@@ -111,12 +111,12 @@
   </div>
 
   {% if show_delete %}
-  <section class="rounded-2xl border border-rose-500/20 bg-rose-500/[0.06] p-5 md:p-6">
+  <section class="danger-panel p-5 md:p-6">
     <h2 class="text-sm font-semibold text-rose-200/90 tracking-tight">Опасная зона</h2>
     <p class="text-sm text-ink-400 mt-1.5 max-w-xl leading-relaxed">Удаление компании необратимо: отзывы и файлы пропадут, HR отвяжутся.</p>
     <form method="post" action="/companies/{{ company.slug }}/delete" class="mt-4"
           onsubmit="return confirm('Удалить компанию «{{ company.name }}»?');">
-      <button type="submit" class="btn border-rose-500/35 bg-rose-500/10 text-rose-200 hover:bg-rose-500/15 hover:border-rose-400/45 rounded-xl px-4 py-2.5 text-sm font-medium inline-flex items-center gap-2">
+      <button type="submit" class="btn btn-danger rounded-xl px-4 py-2.5 text-sm font-medium">
         {{ icon.trash() }} Удалить компанию
       </button>
     </form>

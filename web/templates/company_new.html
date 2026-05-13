@@ -15,10 +15,10 @@
 </div>
 
 {% if error %}
-<div class="mt-8 max-w-xl rounded-xl border border-red-500/35 bg-red-500/[0.08] px-4 py-3 text-sm text-red-200/95 leading-relaxed">{{ error }}</div>
+<div class="alert alert-danger mt-8 max-w-xl">{{ error }}</div>
 {% endif %}
 
-<form method="post" enctype="multipart/form-data" class="mt-8 max-w-xl rounded-2xl border border-ink-500/70 bg-ink-800/20 p-6 md:p-8 space-y-6 shadow-soft ring-1 ring-white/[0.03]">
+<form method="post" enctype="multipart/form-data" class="panel mt-8 max-w-xl p-6 md:p-8 space-y-6">
   <div>
     <label class="block text-xs font-medium text-ink-300 uppercase tracking-wider mb-2">Название</label>
     <input type="text" name="name" required minlength="2" maxlength="200"
@@ -34,7 +34,7 @@
   <div>
     <label class="block text-xs font-medium text-ink-300 uppercase tracking-wider mb-2">Обложка</label>
     <input type="file" name="photo" accept="image/jpeg,image/png,image/webp"
-           class="block w-full text-sm text-ink-300 file:cursor-pointer file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:bg-ink-700 file:text-ink-100 file:font-medium file:ring-1 file:ring-ink-500 hover:file:bg-ink-600 transition-colors">
+           class="file-field">
     <p class="mt-2 text-xs text-ink-500">JPEG, PNG или WebP, макс. {{ hub_settings.web_max_profile_photo_mb }} МБ.</p>
   </div>
   <div class="pt-2">
