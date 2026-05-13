@@ -3,14 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <meta name="theme-color" content="#0a0d14">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Хаб">
+  <meta name="apple-mobile-web-app-title" content="ML Hub">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="/static/manifest.json">
-  <title>{% block title %}{{ title }}{% endblock %} · Хаб</title>
+  <title>{% block title %}{{ title }}{% endblock %} · ML Hub</title>
+  <script>
+    (function () {
+      var allowed = { dark: true, "telegram-blue": true, light: true, sand: true };
+      var theme = "telegram-blue";
+      try {
+        var saved = localStorage.getItem("hub_theme");
+        if (saved && allowed[saved]) theme = saved;
+      } catch (e) {}
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -21,24 +32,24 @@
       theme: {
         extend: {
           fontFamily: {
-            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+            sans: ['VCROSD Mono RUS by D', 'Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
           },
           colors: {
             ink: {
-              900: '#0a0d14',
-              800: '#11151f',
-              700: '#161b27',
-              600: '#1f2535',
-              500: '#2a3146',
-              400: '#3a4360',
-              300: '#7d8597',
-              200: '#aab1c0',
-              100: '#e6e8ef',
+              900: 'rgb(var(--ink-900-rgb) / <alpha-value>)',
+              800: 'rgb(var(--ink-800-rgb) / <alpha-value>)',
+              700: 'rgb(var(--ink-700-rgb) / <alpha-value>)',
+              600: 'rgb(var(--ink-600-rgb) / <alpha-value>)',
+              500: 'rgb(var(--ink-500-rgb) / <alpha-value>)',
+              400: 'rgb(var(--ink-400-rgb) / <alpha-value>)',
+              300: 'rgb(var(--ink-300-rgb) / <alpha-value>)',
+              200: 'rgb(var(--ink-200-rgb) / <alpha-value>)',
+              100: 'rgb(var(--ink-100-rgb) / <alpha-value>)',
             },
             accent: {
-              DEFAULT: '#8a9bff',
-              soft: 'rgba(138, 155, 255, 0.16)',
-              2: '#c084fc',
+              DEFAULT: 'rgb(var(--accent-rgb) / <alpha-value>)',
+              soft: 'var(--accent-soft)',
+              2: 'rgb(var(--accent-2-rgb) / <alpha-value>)',
             },
           },
           boxShadow: {
@@ -57,31 +68,30 @@
 <div class="app-shell md:flex">
   {# Sidebar (md+) #}
   <aside class="hidden md:flex md:flex-col md:w-60 md:fixed md:inset-y-0 md:left-0 md:px-3 md:py-4 md:border-r md:border-ink-600 md:bg-ink-900/80 md:backdrop-blur-xl">
-    <a href="/" class="flex items-center gap-3 mx-0 mb-1 px-3 py-3 rounded-2xl border transition-colors min-h-[3.5rem] {% if nav == 'home' %}border-accent/35 bg-ink-800/60 ring-1 ring-accent/25{% else %}border-transparent hover:border-ink-600 hover:bg-ink-800/40{% endif %}">
-      <span class="text-accent flex-shrink-0">{{ icon.logo() }}</span>
-      <span class="font-semibold tracking-tight text-lg leading-tight">Хаб</span>
+    <a href="/" class="flex items-center mx-0 mb-1 px-3 py-3 rounded-2xl transition-colors min-h-[3.5rem] {% if nav == 'home' %}bg-ink-800/60{% else %}hover:bg-ink-800/40{% endif %}">
+      <span class="brand-title text-xl leading-tight">ML Hub</span>
     </a>
     <nav class="mt-5 flex flex-col gap-1">
       <a href="/library" class="nav-link {{ 'active' if nav == 'library' else '' }}">
-        {{ icon.folder() }}<span>Файлы</span>
+        <img src="/nav-icon/files.webp" class="sidebar-nav-icon" alt=""><span>Файлы</span>
       </a>
       <a href="/feed" class="nav-link {{ 'active' if nav == 'feed' else '' }}">
-        {{ icon.layers() }}<span>Новости</span>
+        <img src="/nav-icon/feed.webp" class="sidebar-nav-icon" alt=""><span>Новости</span>
       </a>
       <a href="/today" class="nav-link {{ 'active' if nav == 'today' else '' }}">
-        {{ icon.flame() }}<span>Выжимка</span>
+        <img src="/nav-icon/today.webp" class="sidebar-nav-icon" alt=""><span>Выжимка</span>
       </a>
       <a href="/hackathons" class="nav-link {{ 'active' if nav == 'hackathons' else '' }}">
-        {{ icon.sparkle() }}<span>Хакатоны</span>
+        <img src="/nav-icon/hackathons.webp" class="sidebar-nav-icon" alt=""><span>Хакатоны</span>
       </a>
       <a href="/companies" class="nav-link {{ 'active' if nav == 'companies' else '' }}">
-        {{ icon.building() }}<span>Компании</span>
+        <img src="/nav-icon/companies.webp" class="sidebar-nav-icon" alt=""><span>Компании</span>
       </a>
       <a href="/people" class="nav-link {{ 'active' if nav == 'people' else '' }}">
-        {{ icon.users() }}<span>Люди</span>
+        <img src="/nav-icon/people.webp" class="sidebar-nav-icon" alt=""><span>Люди</span>
       </a>
       <a href="/me" class="nav-link {{ 'active' if nav == 'me' else '' }}">
-        {{ icon.user() }}<span>Профиль</span>
+        <img src="/nav-icon/profile.webp" class="sidebar-nav-icon" alt=""><span>Профиль</span>
       </a>
     </nav>
     <div class="mt-auto pt-4 border-t border-ink-600">
@@ -95,26 +105,26 @@
 
   {# Мобильная шапка: высота в --app-mobile-chrome-h для вложенных sticky (библиотека и т.д.) #}
   <div id="mobile-chrome" class="md:hidden sticky top-0 z-30">
-    <header class="mobile-topbar flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 bg-ink-900/85 backdrop-blur border-b border-ink-600">
-      <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-2xl border min-h-[3rem] {% if nav == 'home' %}border-accent/35 bg-ink-800/50{% else %}border-ink-600/80 bg-ink-800/30{% endif %}">
-        <span class="text-accent">{{ icon.logo() }}</span>
-        <span class="font-semibold text-base">Хаб</span>
+    <header class="mobile-topbar mobile-topbar-centered flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 bg-ink-900/85 backdrop-blur border-b border-ink-600">
+      <span aria-hidden="true"></span>
+      <a href="/" class="mobile-brand-link flex items-center justify-center px-4 py-2.5 rounded-2xl min-h-[3rem] {% if nav == 'home' %}bg-ink-800/50{% else %}bg-transparent{% endif %}">
+        <span class="brand-title text-xl leading-none">ML Hub</span>
       </a>
-      <a href="/logout" class="text-ink-300 text-sm">{{ icon.logout() }}</a>
+      <a href="/logout" class="mobile-topbar-logout text-ink-300 text-sm">{{ icon.logout() }}</a>
     </header>
   </div>
 
   <nav id="mobile-bottom-nav" class="mobile-bottom-nav md:hidden" aria-label="Основная навигация">
-    <a href="/library" class="mobile-tab {{ 'active' if nav == 'library' else '' }}">{{ icon.folder() }}<span>Файлы</span></a>
-    <a href="/feed" class="mobile-tab {{ 'active' if nav == 'feed' else '' }}">{{ icon.layers() }}<span>Новости</span></a>
-    <a href="/today" class="mobile-tab {{ 'active' if nav == 'today' else '' }}">{{ icon.flame() }}<span>Выжимка</span></a>
-    <a href="/hackathons" class="mobile-tab {{ 'active' if nav == 'hackathons' else '' }}">{{ icon.sparkle() }}<span>Хакатоны</span></a>
-    <a href="/companies" class="mobile-tab {{ 'active' if nav == 'companies' else '' }}">{{ icon.building() }}<span>Компании</span></a>
-    <a href="/people" class="mobile-tab {{ 'active' if nav == 'people' else '' }}">{{ icon.users() }}<span>Люди</span></a>
-    <a href="/me" class="mobile-tab {{ 'active' if nav == 'me' else '' }}">{{ icon.user() }}<span>Профиль</span></a>
+    <a href="/library" class="mobile-tab {{ 'active' if nav == 'library' else '' }}"><img src="/nav-icon/files.webp" class="mobile-nav-icon" alt=""><span>Файлы</span></a>
+    <a href="/feed" class="mobile-tab {{ 'active' if nav == 'feed' else '' }}"><img src="/nav-icon/feed.webp" class="mobile-nav-icon" alt=""><span>Новости</span></a>
+    <a href="/today" class="mobile-tab {{ 'active' if nav == 'today' else '' }}"><img src="/nav-icon/today.webp" class="mobile-nav-icon" alt=""><span>Выжимка</span></a>
+    <a href="/hackathons" class="mobile-tab {{ 'active' if nav == 'hackathons' else '' }}"><img src="/nav-icon/hackathons.webp" class="mobile-nav-icon" alt=""><span>Хакатоны</span></a>
+    <a href="/companies" class="mobile-tab {{ 'active' if nav == 'companies' else '' }}"><img src="/nav-icon/companies.webp" class="mobile-nav-icon" alt=""><span>Компании</span></a>
+    <a href="/people" class="mobile-tab {{ 'active' if nav == 'people' else '' }}"><img src="/nav-icon/people.webp" class="mobile-nav-icon" alt=""><span>Люди</span></a>
+    <a href="/me" class="mobile-tab {{ 'active' if nav == 'me' else '' }}"><img src="/nav-icon/profile.webp" class="mobile-nav-icon" alt=""><span>Профиль</span></a>
   </nav>
 
-  <main class="app-main flex-1 md:ml-60 px-4 md:px-10 py-6 md:py-10 max-w-6xl pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+  <main class="app-main flex-1 md:ml-60 px-4 md:px-10 py-6 md:py-10 max-w-6xl">
     {% block main %}{% endblock %}
   </main>
 </div>
@@ -126,33 +136,64 @@
 {% block extra_scripts %}{% endblock %}
 <script>
 (function () {
+  var themeColors = {
+    dark: "#0a0d14",
+    "telegram-blue": "#07111d",
+    light: "#f6f8fb",
+    sand: "#14120f",
+  };
+
+  function applyTheme(theme) {
+    if (!themeColors[theme]) theme = "telegram-blue";
+    document.documentElement.setAttribute("data-theme", theme);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", themeColors[theme]);
+    try {
+      localStorage.setItem("hub_theme", theme);
+    } catch (e) {}
+    document.dispatchEvent(new CustomEvent("hub-theme-change", { detail: { theme: theme } }));
+  }
+
+  window.setHubTheme = applyTheme;
+  window.getHubTheme = function () {
+    return document.documentElement.getAttribute("data-theme") || "telegram-blue";
+  };
+
+  applyTheme(window.getHubTheme());
+
   var topEl = document.getElementById("mobile-chrome");
   var bottomEl = document.getElementById("mobile-bottom-nav");
   if (!topEl && !bottomEl) return;
   function sync() {
-    if (topEl) {
-      document.documentElement.style.setProperty(
-        "--app-mobile-chrome-h",
-        topEl.offsetHeight + "px"
-      );
-    }
-    if (bottomEl) {
-      document.documentElement.style.setProperty(
-        "--mobile-bottom-nav-h",
-        bottomEl.offsetHeight + "px"
-      );
-    }
+    if (!topEl) return;
+    document.documentElement.style.setProperty(
+      "--app-mobile-chrome-h",
+      topEl.offsetHeight + "px"
+    );
   }
   sync();
-  if (typeof ResizeObserver !== "undefined") {
-    if (topEl) new ResizeObserver(sync).observe(topEl);
-    if (bottomEl) new ResizeObserver(sync).observe(bottomEl);
-  } else {
-    window.addEventListener("resize", sync);
+  if (topEl) {
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(sync).observe(topEl);
+    } else {
+      window.addEventListener("resize", sync);
+    }
   }
-  var active = bottomEl ? bottomEl.querySelector(".mobile-tab.active") : null;
-  if (active && active.scrollIntoView) {
-    active.scrollIntoView({ block: "nearest", inline: "center" });
+  if (bottomEl) {
+    var navScrollKey = "hub_mobile_bottom_nav_scroll_left";
+    try {
+      var savedLeft = parseInt(sessionStorage.getItem(navScrollKey) || "0", 10);
+      if (Number.isFinite(savedLeft) && savedLeft > 0) bottomEl.scrollLeft = savedLeft;
+    } catch (e) {}
+    var saveLeft = function () {
+      try {
+        sessionStorage.setItem(navScrollKey, String(bottomEl.scrollLeft || 0));
+      } catch (e) {}
+    };
+    bottomEl.addEventListener("scroll", saveLeft, { passive: true });
+    bottomEl.addEventListener("pointerdown", saveLeft, { passive: true });
+    bottomEl.addEventListener("click", saveLeft, true);
+    window.addEventListener("pagehide", saveLeft);
   }
 })();
 </script>

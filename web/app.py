@@ -4,9 +4,11 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
 import shutil
 import time
+import unicodedata
 import uuid
 from urllib.parse import quote_plus
 from contextlib import asynccontextmanager
@@ -14,12 +16,13 @@ from pathlib import Path
 from typing import Any
 
 import mimetypes
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from datetime import time as dt_time
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from fastapi.staticfiles import StaticFiles
+from markupsafe import Markup, escape
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.templating import Jinja2Templates
 
@@ -36,6 +39,18 @@ log = logging.getLogger(__name__)
 
 _templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 _static_dir = Path(__file__).resolve().parent / "static"
+_icons_dir = Path(__file__).resolve().parent.parent / "icons"
+_site_font_dir = Path(__file__).resolve().parent.parent / "VCROSDMonoRUSbyD"
+_NAV_ICON_NAMES = {
+    "files": "файлы",
+    "feed": "новости",
+    "today": "выжимка",
+    "hackathons": "хакатоны",
+    "companies": "компании",
+    "people": "люди",
+    "profile": "профиль",
+}
+_LIBRARY_FOLDER_ICON_NAME = "файл"
 
 _auth_rl: dict[str, float] = {}
 _RL_WINDOW_SEC = 55.0
@@ -48,6 +63,8 @@ _VERIFY_FAIL_LOCK_AFTER = 3
 _VERIFY_LOCK_SEC = 300.0
 
 _REACTION_EMOJIS = ("👍", "❤️", "🔥", "🤔", "🎉")
+_URL_RE = re.compile(r"https?://[^\s<>'\"]+", re.IGNORECASE)
+_URL_TRAILING_PUNCT = ".,!?;:)]}»”"
 
 
 def _rl_allow(key: str) -> bool:
@@ -153,6 +170,34 @@ def _event_summary(rec: Any) -> str:
     return (head[:cut] if cut > 100 else head).rstrip(",.;:- ") + "…"
 
 
+def _linkify_text(text: Any) -> Markup:
+    raw = str(text or "")
+    if not raw:
+        return Markup("")
+
+    parts: list[str] = []
+    pos = 0
+    for match in _URL_RE.finditer(raw):
+        url = match.group(0)
+        trailing = ""
+        while url and url[-1] in _URL_TRAILING_PUNCT:
+            trailing = url[-1] + trailing
+            url = url[:-1]
+        if not url:
+            continue
+
+        parts.append(str(escape(raw[pos : match.start()])))
+        safe_url = escape(url)
+        parts.append(
+            f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_url}</a>'
+        )
+        parts.append(str(escape(trailing)))
+        pos = match.end()
+
+    parts.append(str(escape(raw[pos:])))
+    return Markup("".join(parts))
+
+
 def _file_kind(mime: str | None, name: str | None) -> str:
     m = (mime or "").lower()
     n = (name or "").lower()
@@ -204,10 +249,6 @@ def _format_dt_rel(dt) -> str:
         return ""
 
 
-_NEWS_PLACEHOLDER_DIR = _static_dir / "news-placeholders"
-_NEWS_PLACEHOLDER_NAMES = tuple(f"placeholder-{i}" for i in range(1, 6))
-
-
 def _safe_event_cover_disk_path(rel: str | None) -> Path | None:
     if not rel or not str(rel).strip():
         return None
@@ -229,12 +270,6 @@ def _event_thumb_url(rec: Any) -> str:
     disk = _safe_event_cover_disk_path(cover)
     if disk is not None:
         return f"/api/events/{eid}/cover"
-    idx = (eid % 5) + 1
-    base = _NEWS_PLACEHOLDER_NAMES[idx - 1]
-    for ext in (".webp", ".jpg", ".jpeg", ".png"):
-        f = _NEWS_PLACEHOLDER_DIR / f"{base}{ext}"
-        if f.is_file():
-            return f"/static/news-placeholders/{base}{ext}"
     return ""
 
 
@@ -389,6 +424,39 @@ def _events_metrics(events: list[Any]) -> dict:
     return {"total": len(events), "soon": soon}
 
 
+def _digest_sections(events: list[Any]) -> list[dict[str, Any]]:
+    today = datetime.now(timezone.utc).date()
+    week_end = today + timedelta(days=7)
+    sections = [
+        {"key": "today", "title": "Сегодня", "events": []},
+        {"key": "week", "title": "На неделе", "events": []},
+        {"key": "later", "title": "Позднее", "events": []},
+        {"key": "no_date", "title": "Нет даты", "events": []},
+    ]
+    by_key = {s["key"]: s for s in sections}
+
+    for e in events:
+        ends_at = e.get("ends_at")
+        if not ends_at:
+            by_key["no_date"]["events"].append(e)
+            continue
+
+        if getattr(ends_at, "tzinfo", None):
+            event_day = ends_at.astimezone(timezone.utc).date()
+        else:
+            event_day = ends_at.date()
+
+        if event_day == today:
+            key = "today"
+        elif today < event_day <= week_end:
+            key = "week"
+        else:
+            key = "later"
+        by_key[key]["events"].append(e)
+
+    return [s for s in sections if s["events"]]
+
+
 _templates.env.globals["icons_path"] = "_icons.html"
 _templates.env.filters["event_header"] = _event_header
 _templates.env.filters["event_summary"] = _event_summary
@@ -397,6 +465,7 @@ _templates.env.filters["initial"] = _initial_for
 _templates.env.filters["dt_short"] = _format_dt_short
 _templates.env.filters["dt_rel"] = _format_dt_rel
 _templates.env.filters["event_thumb"] = _event_thumb_url
+_templates.env.filters["linkify"] = _linkify_text
 _templates.env.filters["ru_plural"] = _ru_plural
 _templates.env.filters["event_badges"] = _event_badges
 _templates.env.filters["valid_photos"] = _valid_photo_paths
@@ -481,6 +550,48 @@ app.add_middleware(
 
 if _static_dir.is_dir():
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+if _icons_dir.is_dir():
+    app.mount("/icons", StaticFiles(directory=str(_icons_dir)), name="icons")
+
+if _site_font_dir.is_dir():
+    app.mount("/site-font", StaticFiles(directory=str(_site_font_dir)), name="site-font")
+
+
+def _nav_icon_path(slug: str) -> Path | None:
+    target = _NAV_ICON_NAMES.get(slug)
+    if not target:
+        return None
+    return _icon_by_stem(target, (".webp",))
+
+
+def _icon_by_stem(stem: str, suffixes: tuple[str, ...]) -> Path | None:
+    if not _icons_dir.is_dir():
+        return None
+    target_norm = unicodedata.normalize("NFC", stem)
+    for path in _icons_dir.iterdir():
+        if not path.is_file() or path.suffix.lower() not in suffixes:
+            continue
+        if unicodedata.normalize("NFC", path.stem) == target_norm:
+            return path
+    return None
+
+
+@app.get("/nav-icon/{slug}.webp")
+async def nav_icon(slug: str):
+    path = _nav_icon_path(slug)
+    if path is None:
+        raise HTTPException(status_code=404)
+    return FileResponse(path, media_type="image/webp")
+
+
+@app.get("/library-folder-icon.webp")
+async def library_folder_icon():
+    path = _icon_by_stem(_LIBRARY_FOLDER_ICON_NAME, (".webp", ".jpeg", ".jpg", ".png"))
+    if path is None:
+        raise HTTPException(status_code=404)
+    mime, _ = mimetypes.guess_type(str(path))
+    return FileResponse(path, media_type=mime or "image/webp")
 
 
 def pool_dep(request: Request):
@@ -1285,8 +1396,9 @@ async def page_today(request: Request, pool=Depends(pool_dep)):
     if await repo.member_status(pool, uid) != "active":
         request.session.clear()
         return RedirectResponse("/login", status_code=302)
-    strip = await repo.list_events_digest(pool, limit=35)
+    strip = await repo.list_events_digest(pool)
     metrics = _events_metrics(strip)
+    sections = _digest_sections(strip)
     return _templates.TemplateResponse(
         request,
         "today.html",
@@ -1294,6 +1406,7 @@ async def page_today(request: Request, pool=Depends(pool_dep)):
             "title": "Выжимка",
             "nav": "today",
             "events": strip,
+            "sections": sections,
             "metrics": metrics,
             "uid": uid,
         },

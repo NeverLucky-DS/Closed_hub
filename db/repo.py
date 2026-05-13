@@ -541,25 +541,15 @@ _EVENTS_ORDER_FEED = "ORDER BY created_at DESC"
 
 _DIGEST_FILTER = f"""
     {_EVENTS_ACTIVE_FILTER}
-    AND (
-        (ends_at IS NOT NULL AND ends_at <= now() + interval '14 days')
-        OR (created_at >= now() - interval '7 days')
-        OR (ends_at IS NULL AND created_at >= now() - interval '14 days')
-    )
 """
 
 _DIGEST_ORDER = """
     ORDER BY
         CASE
-            WHEN ends_at IS NOT NULL AND ends_at > now() AND ends_at <= now() + interval '3 days' THEN 0
-            WHEN ends_at IS NULL AND created_at >= now() - interval '72 hours' THEN 1
-            WHEN ends_at IS NOT NULL THEN 2
-            ELSE 3
+            WHEN ends_at IS NULL THEN 1
+            ELSE 0
         END,
-        CASE
-            WHEN ends_at IS NOT NULL AND ends_at > now()
-            THEN extract(epoch from ends_at)
-        END ASC NULLS LAST,
+        ends_at ASC NULLS LAST,
         created_at DESC
 """
 
@@ -580,19 +570,19 @@ async def list_events_feed(pool: asyncpg.Pool, limit: int = 50) -> list[asyncpg.
         return list(rows)
 
 
-async def list_events_digest(pool: asyncpg.Pool, limit: int = 30) -> list[asyncpg.Record]:
-    """Выжимка: что близко по дедлайну или недавно добавлено — «прямо сейчас»."""
+async def list_events_digest(pool: asyncpg.Pool, limit: int | None = None) -> list[asyncpg.Record]:
+    """Выжимка: активные новости для группировки по дедлайну на сайте."""
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            f"""
+        sql = f"""
             SELECT id, raw_text, normalized_title, ends_at, ai_summary, cover_image_path, created_at
             FROM events
             WHERE {_DIGEST_FILTER}
             {_DIGEST_ORDER}
-            LIMIT $1
-            """,
-            limit,
-        )
+            """
+        if limit is None:
+            rows = await conn.fetch(sql)
+        else:
+            rows = await conn.fetch(f"{sql}\nLIMIT $1", limit)
         return list(rows)
 
 

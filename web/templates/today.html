@@ -10,34 +10,42 @@
   </p>
 </header>
 
-{% if events %}
-<div class="panel p-5 md:p-7 max-w-2xl">
-  <ul class="space-y-3 list-none pl-0">
-    {% for e in events %}
-    {% set hdr = e | event_header %}
-    <li class="flex gap-3 items-start">
-      <span class="mt-2 h-1.5 w-1.5 rounded-full bg-ink-300 flex-shrink-0" aria-hidden="true"></span>
-      <div class="min-w-0 flex-1">
-        <button type="button"
-                class="digest-open text-left w-full text-[15px] md:text-base text-ink-100 leading-snug hover:text-white transition"
-                data-eid="{{ e.id }}"
-                data-title="{{ hdr | e }}"
-                data-has-end="{{ 1 if e.ends_at else 0 }}"
-                data-end="{{ e.ends_at.strftime('%Y-%m-%d') if e.ends_at else '' }}">
-          {{ hdr }}
-        </button>
-        <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-ink-400">
-          {% if e.ends_at %}
-          <span class="num">до {{ e.ends_at | dt_short }}</span>
-          {% else %}
-          <span class="rounded-md bg-ink-700/80 px-1.5 py-0.5 text-ink-200 ring-1 ring-ink-600">срок не указан</span>
-          {% endif %}
-          <a href="/feed#e-{{ e.id }}" class="text-accent hover:underline num">в ленту →</a>
+{% if sections %}
+<div class="digest-sections max-w-2xl">
+  {% for section in sections %}
+  <section class="panel p-5 md:p-6">
+    <div class="flex items-center justify-between gap-3 mb-4">
+      <h2 class="text-sm uppercase tracking-[0.18em] text-ink-300">{{ section.title }}</h2>
+      <span class="badge num">{{ section.events | length }}</span>
+    </div>
+    <ul class="space-y-3 list-none pl-0">
+      {% for e in section.events %}
+      {% set hdr = e | event_header %}
+      <li class="digest-row">
+        <span class="digest-dot" aria-hidden="true"></span>
+        <div class="min-w-0 flex-1">
+          <button type="button"
+                  class="digest-open digest-title"
+                  data-eid="{{ e.id }}"
+                  data-title="{{ hdr | e }}"
+                  data-has-end="{{ 1 if e.ends_at else 0 }}"
+                  data-end="{{ e.ends_at.strftime('%Y-%m-%d') if e.ends_at else '' }}">
+            {{ hdr }}
+          </button>
+          <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-ink-400">
+            {% if e.ends_at %}
+            <span class="num">до {{ e.ends_at | dt_short }}</span>
+            {% else %}
+            <span class="rounded-md bg-ink-700/80 px-1.5 py-0.5 text-ink-200 ring-1 ring-ink-600">срок не указан</span>
+            {% endif %}
+            <a href="/feed#e-{{ e.id }}" class="text-accent hover:underline num">в ленту →</a>
+          </div>
         </div>
-      </div>
-    </li>
-    {% endfor %}
-  </ul>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endfor %}
 </div>
 {% else %}
 <div class="empty-state p-10 max-w-xl">

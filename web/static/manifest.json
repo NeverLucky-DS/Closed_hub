@@ -1,7 +1,7 @@
 {
-  "name": "Закрытый хаб",
-  "short_name": "Хаб",
-  "description": "Файлы, новости, компании и люди закрытого хаба",
+  "name": "ML Hub",
+  "short_name": "ML Hub",
+  "description": "Файлы, новости, компании и люди ML Hub",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

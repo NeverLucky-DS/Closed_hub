@@ -13,74 +13,67 @@
 </header>
 
 {% if events %}
-<div class="flex flex-col gap-3 max-w-3xl">
+<div class="feed-list">
   {% for e in events %}
   {% set hdr = e | event_header %}
   {% set summary = e | event_summary %}
   {% set thumb = e | event_thumb %}
+  {% set raw = e.raw_text or '' %}
+  {% set long_text = raw | length > 360 %}
   {% set mine_e = re_mine.get(e.id) %}
   {% set totals = re_totals.get(e.id, {}) %}
-  <article id="e-{{ e.id }}" class="list-row overflow-hidden flex flex-row gap-0 scroll-mt-24">
-    <div class="w-[7.25rem] md:w-32 flex-shrink-0 self-stretch min-h-[5.5rem] bg-ink-700 border-r border-ink-600">
-      {% if thumb %}
-      <img src="{{ thumb }}" alt="" class="w-full h-full object-cover min-h-[5.5rem]" loading="lazy" width="128" height="96">
-      {% else %}
-      <div class="w-full h-full min-h-[5.5rem] flex items-center justify-center text-ink-400 text-xs px-2 text-center">нет фото</div>
-      {% endif %}
+  <article id="e-{{ e.id }}" class="feed-card list-row scroll-mt-24 {% if thumb %}feed-card-with-media{% endif %}">
+    {% if thumb %}
+    <div class="feed-media">
+      <img src="{{ thumb }}" alt="" loading="lazy">
     </div>
-    <div class="flex-1 min-w-0 p-4 flex flex-col relative">
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0 flex-1">
-          <div class="text-[11px] text-ink-300 num flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-            <span>{{ e.created_at | dt_rel }}</span>
-            <span class="text-ink-500">·</span>
-            <span>Хаб</span>
-            {% if e.ends_at %}
-            <span class="text-ink-500">·</span>
-            <span>до {{ e.ends_at | dt_short }}</span>
-            {% endif %}
-          </div>
-          <h2 class="mt-1.5 text-base font-semibold text-ink-100 leading-snug line-clamp-3 pr-1">{{ hdr }}</h2>
-        </div>
-        <div class="relative flex flex-col items-end gap-1.5 flex-shrink-0" data-react-root data-eid="{{ e.id }}">
-          {% if is_admin %}
-          <button type="button" class="p-1.5 rounded-lg text-ink-400 hover:text-rose-300 hover:bg-ink-700 border border-transparent hover:border-rose-500/30 admin-hide-event" data-eid="{{ e.id }}" title="Убрать из ленты">{{ icon.trash() }}</button>
-          {% endif %}
-          <div class="flex items-center gap-1 flex-wrap justify-end" data-chips>
-            {% for em in reaction_emojis %}
-              {% set cnt = totals.get(em, 0) %}
-              {% if cnt > 0 or mine_e == em %}
-              <button type="button" data-emoji="{{ em }}" class="react-chip chip {% if mine_e == em %}chip-accent{% else %}hover:border-ink-500{% endif %}">
-                <span>{{ em }}</span>{% if cnt > 0 %}<span class="text-[11px] num text-ink-300">{{ cnt }}</span>{% endif %}
-              </button>
-              {% endif %}
-            {% endfor %}
-            <button type="button" class="react-more w-8 h-8 flex items-center justify-center rounded-full border border-dashed border-ink-500 text-ink-400 hover:border-accent hover:text-accent text-lg leading-none" data-open-picker title="Реакция">+</button>
-          </div>
-          <div class="hidden absolute right-4 top-10 z-30 flex gap-1 p-2 rounded-xl bg-ink-800 ring-1 ring-ink-600 shadow-soft" data-picker>
-            {% for em in reaction_emojis %}
-            <button type="button" data-emoji="{{ em }}" class="w-9 h-9 rounded-lg hover:bg-ink-700 text-lg leading-none" title="Выбрать">{{ em }}</button>
-            {% endfor %}
-            {% if mine_e %}
-            <button type="button" data-emoji="" class="text-[11px] px-2 text-ink-400 hover:text-ink-200" title="Снять">✕</button>
-            {% endif %}
-          </div>
-        </div>
+    {% endif %}
+    <div class="feed-body">
+      <div class="feed-meta num">
+        <span>{{ e.created_at | dt_rel }}</span>
+        {% if e.ends_at %}
+        <span class="text-ink-500">·</span>
+        <span>до {{ e.ends_at | dt_short }}</span>
+        {% endif %}
       </div>
-      {% if summary %}
-      <p class="mt-2 text-sm text-ink-200 leading-relaxed line-clamp-3">{{ summary }}</p>
-      {% endif %}
-      <details class="mt-3 group">
-        <summary class="cursor-pointer text-xs text-ink-300 hover:text-ink-100 inline-flex items-center gap-1 select-none">
+      <h2 class="feed-title">{{ hdr }}</h2>
+      {% if long_text %}
+      <p class="feed-text">{{ summary | linkify }}</p>
+      <details class="feed-fulltext group">
+        <summary>
           Полный текст
           <span class="group-open:rotate-180 transition">{{ icon.chevron_down() }}</span>
         </summary>
-        <div class="mt-2 text-sm text-ink-200 whitespace-pre-wrap leading-relaxed">{{ e.raw_text }}</div>
+        <div>{{ raw | linkify }}</div>
       </details>
-      <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-400">
-        <a href="/people/{{ e.source_user_id }}" class="text-accent hover:underline">Профиль автора</a>
-        <span class="text-ink-600">·</span>
-        <a href="tg://user?id={{ e.source_user_id }}" class="text-ink-300 hover:text-ink-100 hover:underline">Telegram</a>
+      {% elif raw %}
+      <div class="feed-text whitespace-pre-wrap">{{ raw | linkify }}</div>
+      {% elif summary %}
+      <p class="feed-text">{{ summary | linkify }}</p>
+      {% endif %}
+      <div class="feed-actions" data-react-root data-eid="{{ e.id }}">
+        <div class="flex items-center gap-1 flex-wrap" data-chips>
+          {% for em in reaction_emojis %}
+            {% set cnt = totals.get(em, 0) %}
+            {% if cnt > 0 or mine_e == em %}
+            <button type="button" data-emoji="{{ em }}" class="react-chip chip {% if mine_e == em %}chip-accent{% else %}hover:border-ink-500{% endif %}">
+              <span>{{ em }}</span>{% if cnt > 0 %}<span class="text-[11px] num text-ink-300">{{ cnt }}</span>{% endif %}
+            </button>
+            {% endif %}
+          {% endfor %}
+          <button type="button" class="react-more w-8 h-8 flex items-center justify-center rounded-full border border-dashed border-ink-500 text-ink-400 hover:border-accent hover:text-accent text-lg leading-none" data-open-picker title="Реакция">+</button>
+        </div>
+        {% if is_admin %}
+        <button type="button" class="p-1.5 rounded-lg text-ink-500 hover:text-rose-300 hover:bg-ink-700 border border-transparent hover:border-rose-500/30 admin-hide-event" data-eid="{{ e.id }}" title="Убрать из ленты">{{ icon.trash() }}</button>
+        {% endif %}
+        <div class="hidden absolute right-0 bottom-10 z-30 flex gap-1 p-2 rounded-xl bg-ink-800 ring-1 ring-ink-600 shadow-soft" data-picker>
+          {% for em in reaction_emojis %}
+          <button type="button" data-emoji="{{ em }}" class="w-9 h-9 rounded-lg hover:bg-ink-700 text-lg leading-none" title="Выбрать">{{ em }}</button>
+          {% endfor %}
+          {% if mine_e %}
+          <button type="button" data-emoji="" class="text-[11px] px-2 text-ink-400 hover:text-ink-200" title="Снять">✕</button>
+          {% endif %}
+        </div>
       </div>
     </div>
   </article>

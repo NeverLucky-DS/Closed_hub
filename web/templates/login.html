@@ -2,13 +2,36 @@
 {% block public %}
 {% import "_icons.html" as icon %}
 <div class="bg-glow public-screen flex items-center justify-center">
-  <div class="relative w-full max-w-md">
-    <div class="card shadow-soft px-5 py-7 sm:px-7 sm:py-8 backdrop-blur-md">
-      <div class="flex items-center gap-3 mb-6">
-        <span class="text-accent">{{ icon.logo() }}</span>
-        <div>
-          <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Closed Hub</div>
-          <div class="text-lg font-semibold">Вход в закрытый хаб</div>
+  <div class="relative w-full max-w-[30rem]">
+    <div class="mb-3 text-center">
+      <div class="mx-auto mb-2.5 flex h-11 w-11 items-center justify-center rounded-2xl bg-accent-soft text-accent ring-1 ring-accent/30">
+        {{ icon.logo() }}
+      </div>
+      <div class="text-xs uppercase tracking-[0.22em] text-ink-300">Closed Hub</div>
+      <h1 class="mt-1.5 text-2xl font-semibold tracking-tight text-ink-100">Вход в закрытый хаб</h1>
+      <p class="mx-auto mt-1.5 max-w-sm text-sm leading-relaxed text-ink-300">
+        Введите Telegram ID, получите одноразовый код в боте и попадёте в личный кабинет.
+      </p>
+    </div>
+
+    <div class="card shadow-soft px-5 py-5 sm:px-7 sm:py-6 backdrop-blur-md">
+      <div class="mb-4 flex flex-wrap items-center gap-2">
+        <span id="step1Badge" class="auth-step active">
+          <span class="auth-step-num">1</span>
+          Telegram ID
+        </span>
+        <span id="step2Badge" class="auth-step">
+          <span class="auth-step-num">2</span>
+          Код из бота
+        </span>
+      </div>
+
+      <div class="mb-4 trust-card p-3 text-xs leading-relaxed text-ink-300">
+        <div class="flex items-start gap-2">
+          <span class="mt-0.5 text-accent">{{ icon.sparkle() }}</span>
+          <p>
+            Пароль не нужен. Код приходит только в ваш Telegram, а вход работает только для участников с доступом.
+          </p>
         </div>
       </div>
 
@@ -19,9 +42,11 @@
           <input id="uid" name="uid" type="text" inputmode="numeric" autocomplete="username"
                  placeholder="например, 123456789"
                  class="field num">
-          <p class="mt-1.5 text-xs text-ink-300">Открой бота, нажми кнопку «Сайт» — там твой UID.</p>
+          <p class="mt-1.5 text-xs leading-relaxed text-ink-300">
+            Откройте бота, нажмите кнопку «Сайт» — там будет ваш UID. Сейчас вход остаётся ручным.
+          </p>
         </div>
-        <p id="err1" class="text-sm text-rose-300" hidden></p>
+        <p id="err1" class="alert alert-danger" hidden></p>
         <button id="nextBtn" type="button" class="btn btn-primary w-full">
           Получить код
           <span class="opacity-90">{{ icon.arrow_right() }}</span>
@@ -33,7 +58,10 @@
         <div>
           <div class="flex items-center justify-between mb-1.5">
             <label class="text-sm text-ink-200">Код из Telegram</label>
-            <button type="button" id="backBtn" class="text-xs text-ink-300 hover:text-ink-100">Назад</button>
+            <button type="button" id="backBtn" class="text-xs text-ink-300 hover:text-ink-100 inline-flex items-center gap-1">
+              {{ icon.arrow_left() }}
+              Назад
+            </button>
           </div>
           <div class="otp-wrap" id="otpInputs">
             <input class="field" inputmode="numeric" maxlength="1" autocomplete="one-time-code" data-otp="0">
@@ -43,9 +71,11 @@
             <input class="field" inputmode="numeric" maxlength="1" data-otp="4">
             <input class="field" inputmode="numeric" maxlength="1" data-otp="5">
           </div>
-          <p class="mt-2 text-xs text-ink-300">Код пришёл от @бота в личном чате. Действует ~10 минут.</p>
+          <p class="mt-2 text-xs leading-relaxed text-ink-300">
+            Код пришёл от бота в личном чате. Он действует около 10 минут.
+          </p>
         </div>
-        <p id="err2" class="text-sm text-rose-300" hidden></p>
+        <p id="err2" class="alert alert-danger" hidden></p>
         <button id="loginBtn" type="button" class="btn btn-primary w-full">
           Войти
           <span class="opacity-90">{{ icon.arrow_right() }}</span>
@@ -53,8 +83,8 @@
       </div>
     </div>
 
-    <p class="text-center text-xs text-ink-300 mt-4">
-      Никаких паролей — только Telegram. Никто не сможет войти за вас, пока у них нет вашего аккаунта.
+    <p class="text-center text-xs leading-relaxed text-ink-300 mt-4">
+      Если код не приходит, проверьте, что вы уже писали боту и ваш аккаунт есть в закрытом хабе.
     </p>
   </div>
 </div>
@@ -62,6 +92,8 @@
 (function () {
   const step1 = document.getElementById('step1');
   const step2 = document.getElementById('step2');
+  const step1Badge = document.getElementById('step1Badge');
+  const step2Badge = document.getElementById('step2Badge');
   const uidEl = document.getElementById('uid');
   const otpInputs = Array.from(document.querySelectorAll('#otpInputs input[data-otp]'));
   const err1 = document.getElementById('err1');
@@ -74,8 +106,19 @@
   }
 
   function showStep(n) {
-    if (n === 1) { step1.classList.remove('hidden'); step2.classList.add('hidden'); uidEl.focus(); }
-    else { step1.classList.add('hidden'); step2.classList.remove('hidden'); otpInputs[0].focus(); }
+    if (n === 1) {
+      step1.classList.remove('hidden');
+      step2.classList.add('hidden');
+      step1Badge.classList.add('active');
+      step2Badge.classList.remove('active');
+      uidEl.focus();
+    } else {
+      step1.classList.add('hidden');
+      step2.classList.remove('hidden');
+      step1Badge.classList.remove('active');
+      step2Badge.classList.add('active');
+      otpInputs[0].focus();
+    }
   }
 
   function readOtp() {

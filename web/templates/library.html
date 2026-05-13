@@ -20,25 +20,17 @@
 {% if view == 'folders' %}
   {% set visible = categories | selectattr('files_count', 'gt', 0) | list %}
   {% if visible %}
-  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+  <div class="library-folder-grid">
     {% for c in visible %}
-    <a href="/library?cat={{ c.slug }}" class="card card-hover p-5 group block">
-      <div class="rounded-xl h-24 mb-4 flex items-center justify-center bg-ink-800/50 ring-1 ring-ink-600 text-accent">
-        <span class="opacity-90">{{ icon.folder_lg() }}</span>
-      </div>
-      <div class="flex items-baseline justify-between gap-2">
-        <h3 class="font-medium text-ink-100 truncate">{{ c.label_ru }}</h3>
-        <span class="text-xs num text-ink-300">({{ c.files_count }})</span>
-      </div>
-      <div class="mt-1 text-xs text-ink-300 num">
-        {% if c.last_added %}обновлено {{ c.last_added | dt_short }}{% else %}нет файлов{% endif %}
-      </div>
+    <a href="/library?cat={{ c.slug }}" class="library-folder-card" aria-label="{{ c.label_ru }}">
+      <img src="/library-folder-icon.webp" class="library-folder-icon" alt="">
+      <span class="library-folder-label">{{ c.label_ru }}</span>
     </a>
     {% endfor %}
   </div>
   {% else %}
   <div class="empty-state p-10">
-    <div class="mx-auto w-12 h-12 rounded-xl bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-accent">{{ icon.folder_lg() }}</div>
+    <img src="/library-folder-icon.webp" class="library-folder-empty-icon" alt="">
     <p class="mt-4 text-ink-200">Пока нет ни одной темы с файлами.</p>
     <p class="mt-1 text-sm text-ink-300">Пришли документ боту — он предложит папку, и она появится здесь.</p>
   </div>
