@@ -168,6 +168,71 @@ textarea {
   box-shadow: 0 14px 40px -20px rgba(0, 0, 0, 0.6);
 }
 
+/* Простые блоки для страниц и списков */
+.panel {
+  background: rgba(17, 21, 31, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 14px 36px -28px rgba(0, 0, 0, 0.75);
+}
+
+.panel-hover {
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.panel-hover:hover {
+  border-color: var(--border-2);
+  box-shadow: 0 18px 42px -30px rgba(0, 0, 0, 0.85);
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.list-row {
+  background: rgba(17, 21, 31, 0.45);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.list-row:hover {
+  background: rgba(22, 27, 39, 0.55);
+  border-color: var(--border-2);
+}
+
+.empty-state {
+  background: rgba(17, 21, 31, 0.35);
+  border: 1px dashed var(--border-2);
+  border-radius: 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Информационные сообщения */
+.alert {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.alert-warn {
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.1);
+}
+.alert-danger {
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.1);
+}
+
 /* Поля ввода */
 .field {
   width: 100%;
@@ -224,6 +289,70 @@ textarea {
 .btn-ghost:hover {
   background: var(--bg-elev);
   border-color: var(--border);
+}
+.btn-danger {
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.1);
+}
+.btn-danger:hover {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.15);
+}
+
+/* Чипы и загрузка файлов */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: rgba(17, 21, 31, 0.7);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+.chip-accent {
+  border-color: rgba(138, 155, 255, 0.35);
+  color: #b8c2ff;
+  background: var(--accent-soft);
+}
+
+.file-field {
+  display: block;
+  width: 100%;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.file-field::file-selector-button {
+  cursor: pointer;
+  margin-right: 0.75rem;
+  border: 0;
+  border-radius: 12px;
+  padding: 0.62rem 1rem;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: 0 0 0 1px var(--border-2);
+}
+.file-field:hover::file-selector-button {
+  background: #202638;
+}
+
+.dropzone {
+  display: block;
+  cursor: pointer;
+  border: 2px dashed var(--border-2);
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--muted);
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.dropzone:hover {
+  border-color: var(--accent);
+  color: var(--text);
 }
 
 /* Бейджи */

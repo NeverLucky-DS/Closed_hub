@@ -7,17 +7,17 @@
 {% include "_company_subhead.html" %}
 
 {% if error %}
-<div class="mb-8 rounded-xl border border-amber-500/35 bg-amber-500/[0.09] px-4 py-3 text-sm text-amber-100/95">{{ error }}</div>
+<div class="alert alert-warn mb-8">{{ error }}</div>
 {% endif %}
 
 <section class="mb-12">
-  <h2 class="text-xs uppercase tracking-[0.18em] text-ink-500 font-medium mb-4 flex items-center gap-2">
+  <h2 class="section-title mb-4">
     <span class="text-accent">{{ icon.users() }}</span> В карточке
   </h2>
   {% if hr_list %}
   <div class="space-y-4">
     {% for h in hr_list %}
-    <div class="rounded-2xl border border-ink-500/65 bg-ink-800/25 p-5 md:p-6 ring-1 ring-white/[0.02] shadow-soft">
+    <div class="list-row p-5 md:p-6">
       {% if h.summary %}
       <p class="text-ink-100 text-sm leading-relaxed whitespace-pre-wrap">{{ h.summary }}</p>
       {% endif %}
@@ -35,12 +35,12 @@
     {% endfor %}
   </div>
   {% else %}
-  <div class="rounded-2xl border border-dashed border-ink-600 bg-ink-800/15 px-6 py-10 text-center text-sm text-ink-400">
+  <div class="empty-state px-6 py-10 text-sm">
     Пока никого не привязали.
   </div>
   {% endif %}
 
-  <div class="mt-8 rounded-2xl border border-ink-500/70 bg-ink-800/20 p-5 md:p-6 shadow-soft">
+  <div class="panel mt-8 p-5 md:p-6">
     <h3 class="text-sm font-semibold text-ink-100 mb-4">Привязать контакт</h3>
     <form method="post" action="/companies/{{ company.slug }}/link-hr" class="flex flex-col lg:flex-row gap-4 lg:items-end">
       <div class="flex-1 min-w-0">
