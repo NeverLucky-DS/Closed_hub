@@ -65,6 +65,15 @@ _VERIFY_LOCK_SEC = 300.0
 _REACTION_EMOJIS = ("👍", "❤️", "🔥", "🤔", "🎉")
 _URL_RE = re.compile(r"https?://[^\s<>'\"]+", re.IGNORECASE)
 _URL_TRAILING_PUNCT = ".,!?;:)]}»”"
+_CSRF_SESSION_KEY = "csrf_token"
+_CSRF_HEADER = "x-csrf-token"
+_SAFE_INLINE_MIME = {
+    "application/pdf",
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
 
 
 def _rl_allow(key: str) -> bool:
@@ -208,6 +217,38 @@ def _file_kind(mime: str | None, name: str | None) -> str:
     return "other"
 
 
+def _csrf_token(request: Request) -> str:
+    token = request.session.get(_CSRF_SESSION_KEY)
+    if not isinstance(token, str) or len(token) < 32:
+        token = secrets.token_urlsafe(32)
+        request.session[_CSRF_SESSION_KEY] = token
+    return token
+
+
+def _check_csrf(request: Request, supplied: str | None) -> None:
+    expected = request.session.get(_CSRF_SESSION_KEY)
+    if not isinstance(expected, str) or not supplied:
+        raise HTTPException(status_code=403, detail="CSRF token missing")
+    if not hmac.compare_digest(expected, str(supplied)):
+        raise HTTPException(status_code=403, detail="CSRF token invalid")
+
+
+def require_csrf_header(request: Request) -> None:
+    _check_csrf(request, request.headers.get(_CSRF_HEADER))
+
+
+def require_csrf_form(request: Request, csrf_token: str = Form("")) -> None:
+    _check_csrf(request, csrf_token)
+
+
+def _safe_inline_mime(mime: str | None, name: str | None) -> str | None:
+    guessed, _ = mimetypes.guess_type(name or "")
+    m = (mime or guessed or "").split(";", 1)[0].strip().lower()
+    if m in _SAFE_INLINE_MIME:
+        return m
+    return None
+
+
 def _initial_for(name: str | None, fallback: str | int | None = None) -> str:
     s = (name or "").strip()
     if s:
@@ -257,7 +298,7 @@ def _safe_event_cover_disk_path(rel: str | None) -> Path | None:
         return None
     root = Path(get_settings().file_storage_path).resolve()
     full = (root / part).resolve()
-    if not str(full).startswith(str(root)):
+    if not full.is_relative_to(root):
         return None
     if not full.is_file():
         return None
@@ -458,6 +499,7 @@ def _digest_sections(events: list[Any]) -> list[dict[str, Any]]:
 
 
 _templates.env.globals["icons_path"] = "_icons.html"
+_templates.env.globals["csrf_token"] = _csrf_token
 _templates.env.filters["event_header"] = _event_header
 _templates.env.filters["event_summary"] = _event_summary
 _templates.env.filters["file_kind"] = lambda r: _file_kind(r.get("mime_type"), r.get("original_filename"))
@@ -488,6 +530,16 @@ def _no_store_headers() -> dict[str, str]:
         "Pragma": "no-cache",
         "Expires": "0",
     }
+
+
+def _add_security_headers(response) -> None:
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=()",
+    )
 
 
 async def _send_telegram_code(chat_id: int, code: str) -> None:
@@ -540,12 +592,21 @@ def _session_secret() -> str:
 
 
 app = FastAPI(title="Closed hub web", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    _add_security_headers(response)
+    return response
+
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=_session_secret(),
     max_age=14 * 24 * 3600,
     same_site="lax",
-    https_only=False,
+    https_only=get_settings().web_cookie_secure,
 )
 
 if _static_dir.is_dir():
@@ -660,8 +721,8 @@ async def login_page(request: Request):
     )
 
 
-@app.get("/logout")
-async def logout(request: Request):
+@app.post("/logout")
+async def logout(request: Request, _csrf: None = Depends(require_csrf_form)):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
 
@@ -670,6 +731,7 @@ async def logout(request: Request):
 async def auth_request(
     request: Request,
     pool=Depends(pool_dep),
+    _csrf: None = Depends(require_csrf_header),
 ):
     settings = get_settings()
     secret = settings.web_session_secret
@@ -703,7 +765,11 @@ async def auth_request(
 
 
 @app.post("/api/auth/verify")
-async def auth_verify(request: Request, pool=Depends(pool_dep)):
+async def auth_verify(
+    request: Request,
+    pool=Depends(pool_dep),
+    _csrf: None = Depends(require_csrf_header),
+):
     settings = get_settings()
     secret = settings.web_session_secret
     assert secret
@@ -784,7 +850,7 @@ def _safe_under(root: Path, rel: str) -> Path | None:
     try:
         candidate = (root / rel).resolve()
         root_r = root.resolve()
-        if not str(candidate).startswith(str(root_r)):
+        if not candidate.is_relative_to(root_r):
             return None
         return candidate
     except Exception:
@@ -797,7 +863,7 @@ def _unlink_library_file_if_safe(storage_path: str) -> None:
         path = Path.cwd() / path
     path = path.resolve()
     lib = library_root().resolve()
-    if not str(path).startswith(str(lib)):
+    if not path.is_relative_to(lib):
         return
     if path.is_file():
         path.unlink()
@@ -809,7 +875,7 @@ def _library_file_disk_path(row: Any) -> Path:
         path = Path.cwd() / path
     path = path.resolve()
     lib = library_root().resolve()
-    if not str(path).startswith(str(lib)):
+    if not path.is_relative_to(lib):
         raise HTTPException(status_code=404)
     if not path.is_file():
         raise HTTPException(status_code=404)
@@ -829,18 +895,14 @@ async def library_file_raw(
     path = _library_file_disk_path(row)
     mime = row.get("mime_type") or "application/octet-stream"
     name = row.get("original_filename") or path.name
-    if dl == 1:
-        return FileResponse(
-            path,
-            media_type=mime,
-            filename=name,
-            content_disposition_type="attachment",
-        )
+    preview_mime = _safe_inline_mime(mime, name)
+    disposition = "inline" if dl != 1 and preview_mime else "attachment"
     return FileResponse(
         path,
-        media_type=mime,
-        filename=None,
-        content_disposition_type="inline",
+        media_type=preview_mime or mime,
+        filename=None if disposition == "inline" else name,
+        content_disposition_type=disposition,
+        headers={"X-Content-Type-Options": "nosniff"},
     )
 
 
@@ -939,6 +1001,7 @@ async def api_patch_event_ends_at(
     body: EventEndsAtBody,
     pool=Depends(pool_dep),
     _uid: int = Depends(require_uid_api),
+    _csrf: None = Depends(require_csrf_header),
 ):
     row = await repo.fetch_published_event(pool, event_id)
     if not row:
@@ -960,6 +1023,7 @@ async def api_delete_library_file(
     file_id: int,
     pool=Depends(pool_dep),
     _admin: int = Depends(require_web_admin),
+    _csrf: None = Depends(require_csrf_header),
 ):
     row = await repo.mark_library_file_deleted(pool, file_id)
     if not row:
@@ -973,6 +1037,7 @@ async def api_hide_event(
     event_id: int,
     pool=Depends(pool_dep),
     _admin: int = Depends(require_web_admin),
+    _csrf: None = Depends(require_csrf_header),
 ):
     ev = await repo.fetch_event_for_admin(pool, event_id)
     if not ev or str(ev["status"]) != "published":
@@ -993,6 +1058,7 @@ async def api_event_react(
     body: EventReactBody,
     pool=Depends(pool_dep),
     uid: int = Depends(require_uid_api),
+    _csrf: None = Depends(require_csrf_header),
 ):
     row = await repo.fetch_published_event(pool, event_id)
     if not row:
@@ -1091,6 +1157,7 @@ async def library_attach_company(
     cat: str = Form(""),
     file_id: str = Form(""),
     company_id: str = Form(""),
+    _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
     if uid is None:
@@ -1227,6 +1294,7 @@ async def page_hackathon_create_post(
     max_members: int = Form(4),
     starts_at: str = Form(""),
     ends_at: str = Form(""),
+    _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
     if uid is None:
@@ -1341,7 +1409,12 @@ async def page_hackathon_detail(team_id: int, request: Request, pool=Depends(poo
 
 
 @app.post("/hackathons/{team_id}/apply")
-async def hackathon_apply_post(team_id: int, request: Request, pool=Depends(pool_dep)):
+async def hackathon_apply_post(
+    team_id: int,
+    request: Request,
+    pool=Depends(pool_dep),
+    _csrf: None = Depends(require_csrf_form),
+):
     uid = session_uid(request)
     if uid is None:
         return RedirectResponse("/login", status_code=302)
@@ -1358,6 +1431,7 @@ async def hackathon_accept_post(
     application_id: int,
     request: Request,
     pool=Depends(pool_dep),
+    _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
     if uid is None:
@@ -1376,6 +1450,7 @@ async def hackathon_reject_post(
     application_id: int,
     request: Request,
     pool=Depends(pool_dep),
+    _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
     if uid is None:
@@ -1459,6 +1534,7 @@ async def page_company_new_post(
     name: str = Form(""),
     description: str = Form(""),
     photo: UploadFile | None = File(None),
+    _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
     if uid is None:
@@ -1559,6 +1635,7 @@ async def company_photo_post(
     request: Request,
     pool=Depends(pool_dep),
     photo: UploadFile | None = File(None),
+    _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
     if uid is None:
@@ -1590,7 +1667,12 @@ async def company_photo_post(
 
 
 @app.post("/companies/{slug}/photo-clear")
-async def company_photo_clear_post(slug: str, request: Request, pool=Depends(pool_dep)):
+async def company_photo_clear_post(
+    slug: str,
+    request: Request,
+    pool=Depends(pool_dep),
+    _csrf: None = Depends(require_csrf_form),
+):
     uid = session_uid(request)
     if uid is None:
         return RedirectResponse("/login", status_code=302)
@@ -1609,7 +1691,12 @@ async def company_photo_clear_post(slug: str, request: Request, pool=Depends(poo
 
 
 @app.post("/companies/{slug}/delete")
-async def company_delete_post(slug: str, request: Request, pool=Depends(pool_dep)):
+async def company_delete_post(
+    slug: str,
+    request: Request,
+    pool=Depends(pool_dep),
+    _csrf: None = Depends(require_csrf_form),
+):
     uid = session_uid(request)
     if uid is None:
         return RedirectResponse("/login", status_code=302)
@@ -1724,6 +1811,7 @@ async def company_add_review(
     pool=Depends(pool_dep),
     body: str = Form(""),
     hr_contact_id: str = Form(""),
+    _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
     if uid is None:
@@ -1791,6 +1879,7 @@ async def company_link_file(
     file_id_select: str = Form(""),
     file_id_manual: str = Form(""),
     note: str = Form(""),
+    _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
     if uid is None:
@@ -1829,6 +1918,7 @@ async def company_link_hr(
     request: Request,
     pool=Depends(pool_dep),
     hr_contact_id: str = Form(""),
+    _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
     if uid is None:
@@ -1858,6 +1948,7 @@ async def company_unlink_hr(
     request: Request,
     pool=Depends(pool_dep),
     hr_contact_id: str = Form(""),
+    _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
     if uid is None:
@@ -1950,6 +2041,7 @@ async def page_me_save(
     clear_resume: str | None = Form(None),
     resume: UploadFile | None = File(None),
     photos: list[UploadFile] = File(default_factory=list),
+    _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
     if uid is None:

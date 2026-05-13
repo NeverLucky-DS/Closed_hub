@@ -64,6 +64,7 @@
   {% set filled = team.member_count or 0 %}
   {% if filled < mx and team.status == 'open' and not is_member and uid != team.creator_telegram_id %}
   <form method="post" action="/hackathons/{{ team.id }}/apply" class="mt-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <button type="submit" class="btn btn-primary">Подать заявку</button>
   </form>
   {% elif app_row and app_row.status == 'pending' and not is_member %}
@@ -95,9 +96,11 @@
       </a>
       <div class="flex gap-2">
         <form method="post" action="/hackathons/{{ team.id }}/applications/{{ a.id }}/accept">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
           <button type="submit" class="btn btn-primary text-sm">Принять</button>
         </form>
         <form method="post" action="/hackathons/{{ team.id }}/applications/{{ a.id }}/reject">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
           <button type="submit" class="btn text-sm border border-ink-600">Отклонить</button>
         </form>
       </div>

@@ -19,6 +19,7 @@
 {% endif %}
 
 <form method="post" enctype="multipart/form-data" class="panel mt-8 max-w-xl p-6 md:p-8 space-y-6">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
   <div>
     <label class="block text-xs font-medium text-ink-300 uppercase tracking-wider mb-2">Название</label>
     <input type="text" name="name" required minlength="2" maxlength="200"

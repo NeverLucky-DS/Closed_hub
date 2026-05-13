@@ -17,12 +17,13 @@ def main() -> None:
     port = int(os.environ.get("WEB_PORT", "8000"))
     # 0.0.0.0 — доступ с телефона в той же Wi‑Fi сети; 127.0.0.1 — только с этого Mac.
     host = (os.environ.get("WEB_HOST") or "0.0.0.0").strip() or "0.0.0.0"
+    forwarded_allow_ips = (settings.web_forwarded_allow_ips or "127.0.0.1").strip()
     uvicorn.run(
         "web.app:app",
         host=host,
         port=port,
-        proxy_headers=True,
-        forwarded_allow_ips="*",
+        proxy_headers=settings.web_proxy_headers,
+        forwarded_allow_ips=forwarded_allow_ips or "127.0.0.1",
     )
 
 

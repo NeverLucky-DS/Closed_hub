@@ -57,6 +57,7 @@
       </div>
     </div>
     <form method="post" action="/companies/{{ company.slug }}/photo" enctype="multipart/form-data" class="flex flex-col sm:flex-row flex-wrap gap-3 sm:items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <label class="flex-1 min-w-[12rem] cursor-pointer">
         <span class="sr-only">Файл изображения</span>
         <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required
@@ -68,6 +69,7 @@
     {% if gallery %}
     <form method="post" action="/companies/{{ company.slug }}/photo-clear" class="mt-4 pt-4 border-t border-ink-600/80"
           onsubmit="return confirm('Убрать обложку? Файл на диске будет удалён.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <button type="submit" class="btn btn-danger rounded-xl text-sm py-2 px-3">
         {{ icon.trash() }} Убрать обложку
       </button>
@@ -116,6 +118,7 @@
     <p class="text-sm text-ink-400 mt-1.5 max-w-xl leading-relaxed">Удаление компании необратимо: отзывы и файлы пропадут, HR отвяжутся.</p>
     <form method="post" action="/companies/{{ company.slug }}/delete" class="mt-4"
           onsubmit="return confirm('Удалить компанию «{{ company.name }}»?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <button type="submit" class="btn btn-danger rounded-xl px-4 py-2.5 text-sm font-medium">
         {{ icon.trash() }} Удалить компанию
       </button>

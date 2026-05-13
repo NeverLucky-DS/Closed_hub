@@ -171,7 +171,10 @@
     try {
       const r = await fetch('/api/auth/request', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': window.closedHubCsrf || '',
+        },
         body: JSON.stringify({ telegram_user_id: uid }),
       });
       const data = await r.json().catch(() => ({}));
@@ -198,7 +201,10 @@
     try {
       const r = await fetch('/api/auth/verify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': window.closedHubCsrf || '',
+        },
         body: JSON.stringify({ telegram_user_id: savedUid, code: code }),
       });
       const data = await r.json().catch(() => ({}));

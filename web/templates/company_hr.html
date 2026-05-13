@@ -28,6 +28,7 @@
         <div class="text-ink-300 pt-1"><span class="text-ink-500">Контакт</span> · {{ h.contact_ref }}</div>
       </dl>
       <form method="post" action="/companies/{{ company.slug }}/unlink-hr" class="mt-4 pt-4 border-t border-ink-600/60">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <input type="hidden" name="hr_contact_id" value="{{ h.id }}">
         <button type="submit" class="text-sm text-ink-400 hover:text-rose-300 transition-colors font-medium">Отвязать от компании</button>
       </form>
@@ -43,6 +44,7 @@
   <div class="panel mt-8 p-5 md:p-6">
     <h3 class="text-sm font-semibold text-ink-100 mb-4">Привязать контакт</h3>
     <form method="post" action="/companies/{{ company.slug }}/link-hr" class="flex flex-col lg:flex-row gap-4 lg:items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <div class="flex-1 min-w-0">
         <label class="block text-xs text-ink-500 mb-2">Выбор из списка</label>
         <select name="hr_contact_id" class="field rounded-xl py-2.5 px-3 text-sm bg-ink-900/70 border-ink-600 w-full">

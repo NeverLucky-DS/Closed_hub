@@ -119,7 +119,10 @@
     }
     fetch("/api/events/" + curId + "/ends_at", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": window.closedHubCsrf || "",
+      },
       credentials: "same-origin",
       body: JSON.stringify({ ends_at: v }),
     })

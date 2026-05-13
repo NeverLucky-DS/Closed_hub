@@ -15,6 +15,7 @@
 {% endif %}
 
 <form method="post" action="/hackathons/create" class="panel p-6 max-w-xl space-y-4">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
   <div>
     <label class="block text-sm text-ink-200">Название</label>
     <input name="title" required maxlength="200" class="field mt-1.5 w-full" placeholder="Например: ML-хакатон, команда Альфа">

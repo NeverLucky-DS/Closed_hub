@@ -134,7 +134,10 @@ document.addEventListener("pageshow", function (e) {
     function postReact(emoji, done) {
       fetch("/api/events/" + eid + "/react", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": window.closedHubCsrf || "",
+        },
         credentials: "same-origin",
         body: JSON.stringify({ emoji: emoji }),
       })
@@ -178,7 +181,11 @@ document.addEventListener("pageshow", function (e) {
       ev.stopPropagation();
       var id = btn.getAttribute("data-eid");
       if (!id || !confirm("Убрать эту новость с сайта? Пост в Telegram попробуем удалить, если бот может.")) return;
-      fetch("/api/events/" + id, { method: "DELETE", credentials: "same-origin" })
+      fetch("/api/events/" + id, {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": window.closedHubCsrf || "" },
+      })
         .then(function (r) {
           if (r.ok) {
             var card = btn.closest("article");

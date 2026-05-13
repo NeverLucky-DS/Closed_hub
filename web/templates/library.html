@@ -116,6 +116,7 @@
       <div class="px-4 py-3 border-b border-ink-600/80 bg-ink-800/30">
         <div class="text-xs uppercase tracking-wider text-ink-400 mb-2">Карточка компании на сайте</div>
         <form method="post" action="/library/attach-company" class="flex flex-col sm:flex-row gap-2 sm:items-end max-w-xl">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
           <input type="hidden" name="cat" value="{{ category }}">
           <input type="hidden" name="file_id" value="{{ selected.id }}">
           <div class="flex-1 min-w-0">
@@ -343,7 +344,11 @@
     btn.addEventListener("click", function () {
       var id = btn.getAttribute("data-fid");
       if (!id || !confirm("Удалить файл из библиотеки? Действие необратимо.")) return;
-      fetch("/api/library/" + id, { method: "DELETE", credentials: "same-origin" })
+      fetch("/api/library/" + id, {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": window.closedHubCsrf || "" },
+      })
         .then(function (r) {
           if (r.ok) {
             var u = new URL(location.href);

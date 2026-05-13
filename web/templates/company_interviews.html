@@ -40,6 +40,7 @@
   <div class="panel mt-8 p-5 md:p-6 max-w-2xl">
     <h3 class="text-sm font-semibold text-ink-100 mb-4">Новый отзыв</h3>
     <form method="post" action="/companies/{{ company.slug }}/review" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <div>
         <label class="block text-xs text-ink-500 mb-2">Текст</label>
         <textarea name="body" rows="5" class="field rounded-xl py-3 px-4 text-sm bg-ink-900/70 border-ink-600 w-full min-h-[7rem]" placeholder="Минимум 10 символов, если не выбран HR из списка"></textarea>

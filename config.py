@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     web_auth_code_ttl_sec: int = 600
     web_max_profile_photo_mb: int = 3
     web_max_resume_mb: int = 5
+    # На VPS с HTTPS ставь true, локально можно оставить false.
+    web_cookie_secure: bool = False
+    # Доверенные IP reverse proxy для uvicorn. "*" не нужен по умолчанию.
+    web_proxy_headers: bool = False
+    web_forwarded_allow_ips: str = "127.0.0.1"
     # Через запятую: кто может на сайте удалять файлы и скрывать новости (Telegram user id).
     # Пустая строка в .env отключает всех; если переменная не задана — дефолт ниже (владелец хаба).
     web_admin_telegram_ids: str = "1202549697"
