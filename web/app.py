@@ -32,7 +32,7 @@ from db.pool import close_pool, create_pool
 from db.schema_patch import apply_pending_patches
 from services.file_storage import company_root, library_root, profile_root
 from services.telegram_http import telegram_api_post
-from services import interviews_store, resources_service
+from services import interviews_store, profile_analysis, resources_service
 from utils.company_slug import slugify_company_name
 
 log = logging.getLogger(__name__)
@@ -2120,11 +2120,40 @@ async def page_me(request: Request, pool=Depends(pool_dep)):
         return RedirectResponse("/login", status_code=302)
     await repo.ensure_member_profile_row(pool, uid)
     prof = await repo.get_member_profile(pool, uid)
+    analysis = await repo.get_profile_analysis(pool, uid)
     return _templates.TemplateResponse(
         request,
         "profile_edit.html",
-        {"title": "Мой профиль", "nav": "me", "p": prof, "uid": uid, "github_ok": _github_ok},
+        {
+            "title": "Мой профиль",
+            "nav": "me",
+            "p": prof,
+            "uid": uid,
+            "github_ok": _github_ok,
+            "analysis": analysis,
+        },
     )
+
+
+@app.post("/me/analysis")
+async def page_me_analysis(
+    request: Request,
+    pool=Depends(pool_dep),
+    _csrf: None = Depends(require_csrf_form),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+    await repo.ensure_member_profile_row(pool, uid)
+    prof = await repo.get_member_profile(pool, uid)
+    try:
+        await profile_analysis.run_profile_analysis(pool, uid, prof)
+    except profile_analysis.ProfileAnalysisError:
+        log.info("profile_analysis_failed user=%s", uid, exc_info=True)
+    return RedirectResponse("/me#profile-analysis", status_code=303)
 
 
 @app.post("/me")

@@ -275,6 +275,24 @@ async def summarize_file(pool, text_sample: str, categories_block: str) -> dict:
     return json.loads(raw)
 
 
+async def analyze_profile(pool, resume_text: str, github_block: str) -> dict:
+    settings = get_settings()
+    template = _load_prompt("profile_analysis.txt")
+    user_block = template.replace("{resume_text}", resume_text[:18000]).replace(
+        "{github_block}", github_block[:12000]
+    )
+    raw, _, _ = await mistral_chat(
+        pool,
+        purpose="profile_analysis",
+        model=settings.mistral_model_default,
+        system="Reply with JSON only.",
+        user=user_block,
+        json_mode=True,
+        prefer_site_key=True,
+    )
+    return json.loads(raw)
+
+
 async def voice_gist(pool, transcript: str) -> dict:
     settings = get_settings()
     template = _load_prompt("voice_context.txt")

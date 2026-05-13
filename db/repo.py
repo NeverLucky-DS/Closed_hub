@@ -1066,6 +1066,120 @@ async def list_public_profiles(pool: asyncpg.Pool, limit: int = 200) -> list[asy
         return list(rows)
 
 
+def _json_or_empty(raw: Any) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+async def get_profile_analysis(pool: asyncpg.Pool, user_id: int) -> dict[str, Any] | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT user_id, status, result, error, source_resume_path, source_github_url,
+                   source_info, created_at, updated_at, started_at, finished_at
+            FROM profile_analyses
+            WHERE user_id = $1
+            """,
+            user_id,
+        )
+    if not row:
+        return None
+    data = dict(row)
+    data["result"] = _json_or_empty(data.get("result"))
+    data["source_info"] = _json_or_empty(data.get("source_info"))
+    return data
+
+
+async def start_profile_analysis(
+    pool: asyncpg.Pool,
+    *,
+    user_id: int,
+    source_resume_path: str | None,
+    source_github_url: str | None,
+    source_info: dict[str, Any],
+) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO profile_analyses (
+                user_id, status, result, error, source_resume_path,
+                source_github_url, source_info, started_at, finished_at, updated_at
+            )
+            VALUES ($1, 'processing', NULL, NULL, $2, $3, $4::jsonb, now(), NULL, now())
+            ON CONFLICT (user_id) DO UPDATE
+            SET status = 'processing',
+                result = NULL,
+                error = NULL,
+                source_resume_path = EXCLUDED.source_resume_path,
+                source_github_url = EXCLUDED.source_github_url,
+                source_info = EXCLUDED.source_info,
+                started_at = now(),
+                finished_at = NULL,
+                updated_at = now()
+            """,
+            user_id,
+            source_resume_path,
+            source_github_url,
+            json.dumps(source_info, ensure_ascii=False),
+        )
+
+
+async def finish_profile_analysis(
+    pool: asyncpg.Pool,
+    *,
+    user_id: int,
+    result: dict[str, Any],
+    source_info: dict[str, Any],
+) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE profile_analyses
+            SET status = 'ready',
+                result = $2::jsonb,
+                error = NULL,
+                source_info = $3::jsonb,
+                finished_at = now(),
+                updated_at = now()
+            WHERE user_id = $1
+            """,
+            user_id,
+            json.dumps(result, ensure_ascii=False),
+            json.dumps(source_info, ensure_ascii=False),
+        )
+
+
+async def fail_profile_analysis(
+    pool: asyncpg.Pool,
+    *,
+    user_id: int,
+    error: str,
+    source_info: dict[str, Any],
+) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE profile_analyses
+            SET status = 'failed',
+                result = NULL,
+                error = $2,
+                source_info = $3::jsonb,
+                finished_at = now(),
+                updated_at = now()
+            WHERE user_id = $1
+            """,
+            user_id,
+            error[:2000],
+            json.dumps(source_info, ensure_ascii=False),
+        )
+
+
 async def log_llm_call(
     pool: asyncpg.Pool,
     purpose: str,

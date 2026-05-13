@@ -189,6 +189,121 @@
     {% endif %}
   </aside>
 </form>
+
+<section id="profile-analysis" class="panel p-5 md:p-6 mt-5 space-y-4">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <div class="section-title mb-1">Приватный карьерный анализ</div>
+      <p class="text-sm text-ink-300 max-w-2xl">
+        Видно только тебе на странице «Мой профиль». Анализ берёт текущее PDF-резюме и публичный GitHub без OAuth.
+      </p>
+    </div>
+    <form method="post" action="/me/analysis">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button type="submit" class="btn btn-primary">
+        {{ icon.sparkle() }}
+        <span>{% if analysis %}Обновить анализ{% else %}Запустить анализ{% endif %}</span>
+      </button>
+    </form>
+  </div>
+
+  <p class="text-xs text-ink-500">
+    Запуск синхронный: обычно занимает до минуты. Если GitHub или LLM не ответят, здесь появится понятная ошибка.
+  </p>
+
+  {% if analysis %}
+    <div class="rounded-xl border border-ink-600 bg-ink-900/35 p-4">
+      <div class="flex flex-wrap items-center gap-2 text-sm">
+        <span class="chip">Статус: {{ analysis.status }}</span>
+        {% if analysis.updated_at %}
+        <span class="text-ink-400">обновлено {{ analysis.updated_at | dt_short }}</span>
+        {% endif %}
+      </div>
+
+      {% if analysis.status == 'failed' %}
+      <div class="alert alert-danger mt-4">{{ analysis.error or 'Анализ не завершился.' }}</div>
+      {% elif analysis.status == 'processing' %}
+      <div class="alert mt-4">Анализ запущен. Обнови страницу через несколько секунд, если запрос ещё выполняется.</div>
+      {% elif analysis.status == 'ready' and analysis.result %}
+        {% set result = analysis.result %}
+        {% if result.career_summary %}
+        <div class="mt-4">
+          <div class="text-sm font-medium text-ink-100 mb-1">Карьерная выжимка</div>
+          <p class="text-sm text-ink-200 leading-relaxed whitespace-pre-wrap">{{ result.career_summary }}</p>
+        </div>
+        {% endif %}
+
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          {% if result.stack %}
+          <div>
+            <div class="text-sm font-medium text-ink-100 mb-2">Стек</div>
+            <div class="flex flex-wrap gap-2">
+              {% for item in result.stack %}
+              <span class="chip">{{ item }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% if result.strengths %}
+          <div>
+            <div class="text-sm font-medium text-ink-100 mb-2">Сильные стороны</div>
+            <ul class="list-disc pl-5 text-sm text-ink-200 space-y-1">
+              {% for item in result.strengths %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+        </div>
+
+        {% if result.projects %}
+        <div class="mt-4">
+          <div class="text-sm font-medium text-ink-100 mb-2">Проекты</div>
+          <ul class="list-disc pl-5 text-sm text-ink-200 space-y-1">
+            {% for item in result.projects %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        {% if result.resume_recommendations %}
+        <div class="mt-4">
+          <div class="text-sm font-medium text-ink-100 mb-2">Как улучшить резюме</div>
+          <ul class="list-disc pl-5 text-sm text-ink-200 space-y-1">
+            {% for item in result.resume_recommendations %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        {% if result.about_block %}
+        <div class="mt-4">
+          <div class="text-sm font-medium text-ink-100 mb-1">Готовый About-блок</div>
+          <p class="text-sm text-ink-200 leading-relaxed whitespace-pre-wrap">{{ result.about_block }}</p>
+        </div>
+        {% endif %}
+
+        {% if result.questions_for_user %}
+        <div class="mt-4">
+          <div class="text-sm font-medium text-ink-100 mb-2">Вопросы к тебе</div>
+          <ul class="list-disc pl-5 text-sm text-ink-200 space-y-1">
+            {% for item in result.questions_for_user %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      Пока анализа нет. Загрузи PDF-резюме, проверь GitHub и нажми «Запустить анализ».
+    </div>
+  {% endif %}
+</section>
+
 <script>
 (function () {
   const labels = {

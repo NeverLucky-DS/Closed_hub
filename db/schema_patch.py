@@ -273,6 +273,26 @@ CREATE INDEX IF NOT EXISTS idx_resource_links_created
     ON resource_links (created_at DESC);
 """,
     ),
+    (
+        15,
+        """
+CREATE TABLE IF NOT EXISTS profile_analyses (
+    user_id BIGINT PRIMARY KEY REFERENCES members (telegram_user_id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('processing', 'ready', 'failed')),
+    result JSONB,
+    error TEXT,
+    source_resume_path TEXT,
+    source_github_url TEXT,
+    source_info JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_analyses_updated ON profile_analyses (updated_at DESC);
+""",
+    ),
 ]
 
 
