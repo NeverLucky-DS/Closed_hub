@@ -78,6 +78,9 @@
       <a href="/library" class="nav-link {{ 'active' if nav == 'library' else '' }}">
         <img src="/nav-icon/files.webp" class="sidebar-nav-icon" alt=""><span>Файлы</span>
       </a>
+      <a href="/resources" class="nav-link {{ 'active' if nav == 'resources' else '' }}">
+        {{ icon.book() }}<span>Ресурсы</span>
+      </a>
       <a href="/feed" class="nav-link {{ 'active' if nav == 'feed' else '' }}">
         <img src="/nav-icon/feed.webp" class="sidebar-nav-icon" alt=""><span>Новости</span>
       </a>
@@ -125,6 +128,7 @@
 
   <nav id="mobile-bottom-nav" class="mobile-bottom-nav md:hidden" aria-label="Основная навигация">
     <a href="/library" class="mobile-tab {{ 'active' if nav == 'library' else '' }}"><img src="/nav-icon/files.webp" class="mobile-nav-icon" alt=""><span>Файлы</span></a>
+    <a href="/resources" class="mobile-tab {{ 'active' if nav == 'resources' else '' }}">{{ icon.book() }}<span>Ресурсы</span></a>
     <a href="/feed" class="mobile-tab {{ 'active' if nav == 'feed' else '' }}"><img src="/nav-icon/feed.webp" class="mobile-nav-icon" alt=""><span>Новости</span></a>
     <a href="/today" class="mobile-tab {{ 'active' if nav == 'today' else '' }}"><img src="/nav-icon/today.webp" class="mobile-nav-icon" alt=""><span>Выжимка</span></a>
     <a href="/hackathons" class="mobile-tab {{ 'active' if nav == 'hackathons' else '' }}"><img src="/nav-icon/hackathons.webp" class="mobile-nav-icon" alt=""><span>Хакатоны</span></a>

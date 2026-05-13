@@ -32,7 +32,7 @@ from db.pool import close_pool, create_pool
 from db.schema_patch import apply_pending_patches
 from services.file_storage import company_root, library_root, profile_root
 from services.telegram_http import telegram_api_post
-from services import interviews_store
+from services import interviews_store, resources_service
 from utils.company_slug import slugify_company_name
 
 log = logging.getLogger(__name__)
@@ -1194,6 +1194,108 @@ async def library_attach_company(
     if suf:
         redir += f"&attach_err={suf}"
     return RedirectResponse(redir, status_code=303)
+
+
+@app.get("/resources", response_class=HTMLResponse)
+async def page_resources(
+    request: Request,
+    topic: int | None = None,
+    q: str = "",
+    pool=Depends(pool_dep),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+
+    topics = await repo.list_resource_topics_with_counts(pool)
+    all_topics = await repo.list_resource_topics(pool)
+    selected = None
+    if topic is not None:
+        selected = await repo.get_resource_topic(pool, topic)
+        if not selected:
+            return RedirectResponse("/resources?err=Тема+не+найдена", status_code=303)
+
+    query = (q or "").strip()
+    links = await repo.list_resource_links(pool, topic_id=topic, query=query, limit=300)
+    return _templates.TemplateResponse(
+        request,
+        "resources.html",
+        {
+            "title": "Ресурсы",
+            "nav": "resources",
+            "uid": uid,
+            "topics": topics,
+            "all_topics": all_topics,
+            "selected_topic": selected,
+            "links": links,
+            "q": query,
+            "err": request.query_params.get("err"),
+            "created": request.query_params.get("created"),
+        },
+        headers=_no_store_headers(),
+    )
+
+
+@app.post("/resources")
+async def resources_add_link(
+    request: Request,
+    pool=Depends(pool_dep),
+    url: str = Form(""),
+    topic_id: str = Form(""),
+    new_topic: str = Form(""),
+    user_note: str = Form(""),
+    _csrf: None = Depends(require_csrf_form),
+):
+    uid = session_uid(request)
+    if uid is None:
+        return RedirectResponse("/login", status_code=302)
+    if await repo.member_status(pool, uid) != "active":
+        request.session.clear()
+        return RedirectResponse("/login", status_code=302)
+
+    norm_url, err = resources_service.normalize_url(url)
+    if err:
+        return RedirectResponse(f"/resources?err={quote_plus(err)}", status_code=303)
+
+    note = resources_service.normalize_note(user_note)
+    if len(note) < 3:
+        return RedirectResponse(
+            "/resources?err=Добавь+короткое+описание+пользы+ссылки",
+            status_code=303,
+        )
+
+    topic_title = (new_topic or "").strip()
+    if topic_title:
+        slug, title, topic_err = resources_service.normalize_topic_title(topic_title)
+        if topic_err or not slug or not title:
+            return RedirectResponse(
+                f"/resources?err={quote_plus(topic_err or 'Некорректная тема')}",
+                status_code=303,
+            )
+        tid = await repo.ensure_resource_topic(pool, slug, title, uid)
+    else:
+        try:
+            tid = int((topic_id or "").strip())
+        except ValueError:
+            return RedirectResponse("/resources?err=Выбери+тему", status_code=303)
+        if not await repo.get_resource_topic(pool, tid):
+            return RedirectResponse("/resources?err=Тема+не+найдена", status_code=303)
+
+    assert norm_url is not None
+    title = resources_service.default_title_for_url(norm_url)
+    rid = await repo.insert_resource_link(
+        pool,
+        topic_id=tid,
+        url=norm_url,
+        title=title,
+        user_note=note,
+        ai_summary=None,
+        added_by=uid,
+    )
+    return RedirectResponse(f"/resources?topic={tid}&created={rid}", status_code=303)
 
 
 @app.get("/feed", response_class=HTMLResponse)

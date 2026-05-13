@@ -196,6 +196,44 @@ INSERT INTO file_categories (slug, label_ru) VALUES
     ('other', 'Другое / смешанное')
 ON CONFLICT (slug) DO NOTHING;
 
+CREATE TABLE IF NOT EXISTS resource_topics (
+    id BIGSERIAL PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    parent_id BIGINT REFERENCES resource_topics (id) ON DELETE CASCADE,
+    created_by BIGINT REFERENCES members (telegram_user_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_resource_topics_parent ON resource_topics (parent_id);
+
+INSERT INTO resource_topics (slug, title) VALUES
+    ('career', 'Карьера'),
+    ('interviews', 'Собеседования'),
+    ('ml', 'Machine Learning'),
+    ('algorithms', 'Алгоритмы'),
+    ('courses', 'Курсы'),
+    ('tools', 'Инструменты'),
+    ('other', 'Другое')
+ON CONFLICT (slug) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS resource_links (
+    id BIGSERIAL PRIMARY KEY,
+    topic_id BIGINT NOT NULL REFERENCES resource_topics (id) ON DELETE RESTRICT,
+    url TEXT NOT NULL,
+    title TEXT NOT NULL,
+    user_note TEXT NOT NULL DEFAULT '',
+    ai_summary TEXT,
+    added_by BIGINT NOT NULL REFERENCES members (telegram_user_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_resource_links_topic_created
+    ON resource_links (topic_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_resource_links_created
+    ON resource_links (created_at DESC);
+
 CREATE TABLE IF NOT EXISTS schema_migrations (
     id INT PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT now()

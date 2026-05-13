@@ -22,7 +22,7 @@
     </div>
   </div>
 
-  <section class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+  <section class="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
     <a href="/feed" class="panel panel-hover p-5 block">
       <div class="flex items-center justify-between gap-3">
         <span class="text-accent">{{ icon.layers() }}</span>
@@ -39,6 +39,14 @@
       <h2 class="mt-4 text-lg font-semibold text-ink-100">Библиотека</h2>
       <p class="mt-2 text-sm leading-relaxed text-ink-300">Материалы по темам, файлы компаний и полезные документы.</p>
     </a>
+    <a href="/resources" class="panel panel-hover p-5 block">
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-accent">{{ icon.book() }}</span>
+        <span class="text-ink-500">{{ icon.chevron_right() }}</span>
+      </div>
+      <h2 class="mt-4 text-lg font-semibold text-ink-100">Ресурсы</h2>
+      <p class="mt-2 text-sm leading-relaxed text-ink-300">Полезные ссылки по темам: статьи, курсы, инструменты и карьерные материалы.</p>
+    </a>
     <a href="/today" class="panel panel-hover p-5 block">
       <div class="flex items-center justify-between gap-3">
         <span class="text-accent">{{ icon.flame() }}</span>
@@ -54,6 +62,7 @@
     <div class="grid gap-3 text-sm text-ink-300 md:grid-cols-2">
       <p><span class="text-accent font-medium">Компании</span> — работодатели, HR, собесы и связанные файлы.</p>
       <p><span class="text-accent font-medium">Люди</span> — участники с заполненным GitHub-профилем.</p>
+      <p><span class="text-accent font-medium">Ресурсы</span> — ссылки, статьи, курсы и инструменты по темам.</p>
       <p><span class="text-accent font-medium">Хакатоны</span> — команды, заявки и набор участников.</p>
       <p><span class="text-accent font-medium">Профиль</span> — имя, фото, ссылки, образование и резюме.</p>
     </div>

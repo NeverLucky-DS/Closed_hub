@@ -531,6 +531,144 @@ async def list_library_files(
         return list(rows)
 
 
+async def list_resource_topics(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT t.id, t.slug, t.title, t.parent_id,
+                   CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS path_title
+            FROM resource_topics t
+            LEFT JOIN resource_topics p ON p.id = t.parent_id
+            ORDER BY path_title ASC
+            """,
+        )
+        return list(rows)
+
+
+async def list_resource_topics_with_counts(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT t.id, t.slug, t.title, t.parent_id,
+                   CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS path_title,
+                   COUNT(l.id)::int AS links_count,
+                   MAX(l.created_at) AS last_added
+            FROM resource_topics t
+            LEFT JOIN resource_topics p ON p.id = t.parent_id
+            LEFT JOIN resource_links l ON l.topic_id = t.id
+            GROUP BY t.id, p.id, p.title
+            ORDER BY links_count DESC, path_title ASC
+            """,
+        )
+        return list(rows)
+
+
+async def get_resource_topic(pool: asyncpg.Pool, topic_id: int) -> asyncpg.Record | None:
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            """
+            SELECT t.id, t.slug, t.title, t.parent_id,
+                   CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS path_title
+            FROM resource_topics t
+            LEFT JOIN resource_topics p ON p.id = t.parent_id
+            WHERE t.id = $1
+            """,
+            topic_id,
+        )
+
+
+async def ensure_resource_topic(
+    pool: asyncpg.Pool,
+    slug: str,
+    title: str,
+    created_by: int,
+    parent_id: int | None = None,
+) -> int:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO resource_topics (slug, title, parent_id, created_by, updated_at)
+            VALUES ($1, $2, $3, $4, now())
+            ON CONFLICT (slug) DO UPDATE
+            SET title = EXCLUDED.title,
+                updated_at = now()
+            RETURNING id
+            """,
+            slug,
+            title,
+            parent_id,
+            created_by,
+        )
+        return int(row["id"])
+
+
+async def insert_resource_link(
+    pool: asyncpg.Pool,
+    topic_id: int,
+    url: str,
+    title: str,
+    user_note: str,
+    ai_summary: str | None,
+    added_by: int,
+) -> int:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO resource_links (topic_id, url, title, user_note, ai_summary, added_by)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
+            """,
+            topic_id,
+            url,
+            title,
+            user_note,
+            ai_summary,
+            added_by,
+        )
+        return int(row["id"])
+
+
+async def list_resource_links(
+    pool: asyncpg.Pool,
+    topic_id: int | None = None,
+    query: str = "",
+    limit: int = 200,
+) -> list[asyncpg.Record]:
+    q = (query or "").strip()
+    pat = f"%{q}%"
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT l.id, l.topic_id, l.url, l.title, l.user_note, l.ai_summary,
+                   l.added_by, l.created_at,
+                   t.title AS topic_title,
+                   CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS topic_path,
+                   COALESCE(NULLIF(mp.display_name, ''), l.added_by::text) AS added_by_label
+            FROM resource_links l
+            INNER JOIN resource_topics t ON t.id = l.topic_id
+            LEFT JOIN resource_topics p ON p.id = t.parent_id
+            LEFT JOIN member_profiles mp ON mp.telegram_user_id = l.added_by
+            WHERE ($1::bigint IS NULL OR l.topic_id = $1)
+              AND (
+                $2::text = ''
+                OR l.title ILIKE $3
+                OR l.url ILIKE $3
+                OR l.user_note ILIKE $3
+                OR COALESCE(l.ai_summary, '') ILIKE $3
+                OR t.title ILIKE $3
+                OR COALESCE(p.title, '') ILIKE $3
+              )
+            ORDER BY l.created_at DESC
+            LIMIT $4
+            """,
+            topic_id,
+            q,
+            pat,
+            limit,
+        )
+        return list(rows)
+
+
 _EVENTS_ACTIVE_FILTER = """
     status = 'published'
     AND (ends_at IS NULL OR ends_at >= now())
