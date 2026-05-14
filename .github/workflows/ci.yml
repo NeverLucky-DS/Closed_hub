@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    # Импорт `web.app` тянет `get_settings()` и SessionMiddleware — нужны непустые значения (не GitHub Secrets).
+    env:
+      TELEGRAM_BOT_TOKEN: ci-placeholder-not-a-real-token
+      MISTRAL_API_KEY: ci-placeholder-not-a-real-key
+      WEB_SESSION_SECRET: ci-placeholder-session-secret-for-import-smoke
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Smoke import FastAPI app
+        run: uv run python -c "from web.app import app; assert app.title"

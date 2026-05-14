@@ -2,9 +2,9 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: closedhub
-      POSTGRES_PASSWORD: closedhub
-      POSTGRES_DB: closedhub
+      POSTGRES_USER: ${POSTGRES_USER:-closedhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-closedhub}
+      POSTGRES_DB: ${POSTGRES_DB:-closedhub}
     ports:
       # С хоста: localhost:${POSTGRES_HOST_PORT}. Внутри сети compose сервисы ходят на postgres:5432.
       - "${POSTGRES_HOST_PORT:-5433}:5432"
@@ -12,7 +12,11 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U closedhub -d closedhub"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-closedhub} -d ${POSTGRES_DB:-closedhub}",
+        ]
       interval: 3s
       timeout: 5s
       retries: 10
@@ -27,7 +31,7 @@ services:
       - .env
     environment:
       # В контейнере localhost — это сам бот; Postgres — сервис postgres в сети compose.
-      DATABASE_URL: postgresql://closedhub:closedhub@postgres:5432/closedhub
+      DATABASE_URL: postgresql://${POSTGRES_USER:-closedhub}:${POSTGRES_PASSWORD:-closedhub}@postgres:5432/${POSTGRES_DB:-closedhub}
       # Ключ Google: в образ не попадает (.dockerignore). Путь внутри контейнера — всегда этот файл.
       GOOGLE_SERVICE_ACCOUNT_JSON_PATH: /app/secrets/google-service-account.json
     volumes:
@@ -44,7 +48,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://closedhub:closedhub@postgres:5432/closedhub
+      DATABASE_URL: postgresql://${POSTGRES_USER:-closedhub}:${POSTGRES_PASSWORD:-closedhub}@postgres:5432/${POSTGRES_DB:-closedhub}
     volumes:
       - ./storage:/app/storage
     ports:

@@ -35,6 +35,7 @@ from services.telegram_http import telegram_api_post
 from services import files_service, interviews_store, profile_analysis, resources_service
 from utils.company_slug import slugify_company_name
 from utils.text_slug import slugify_folder
+from web.routers.health import router as health_router
 
 log = logging.getLogger(__name__)
 
@@ -599,6 +600,7 @@ def _session_secret() -> str:
 
 
 app = FastAPI(title="Closed hub web", lifespan=lifespan)
+app.include_router(health_router)
 
 
 @app.middleware("http")

@@ -7,10 +7,16 @@
 1. **Клонировать** репозиторий, установить [uv](https://github.com/astral-sh/uv) и (по желанию) Docker.
 2. **Окружение:** `cp .env.example .env` и заполнить минимум `TELEGRAM_BOT_TOKEN`, `TELEGRAM_GROUP_CHAT_ID`, `MISTRAL_API_KEY`, `WEB_SESSION_SECRET`, `DATABASE_URL` (или полагаться на значения из примера для локального Postgres).
 3. **База и процессы:**
-   - `docker compose up -d` — поднимет Postgres, бота и веб на порту `8000` (см. `docker-compose.yml`).
-   - Локально без контейнера бота: `uv sync`, затем `uv run python -m bot.main` и отдельно `uv run python -m web.main`.
+   - `docker compose up -d` — поднимет Postgres, бота и веб. Внутри контейнера веб слушает **8000**; с хоста по умолчанию это **`WEB_HOST_PORT` → 8001** (`${WEB_HOST_PORT:-8001}:8000` в `docker-compose.yml`). То есть открывать `http://localhost:8001`, если не переопределяли порт.
+   - Локально без Docker (частый вариант разработки): `uv sync`, затем `uv run python -m bot.main` и отдельно `uv run python -m web.main` — веб по умолчанию на **8000** (`http://localhost:8000`), если не задан другой порт в окружении/аргументах uvicorn.
 
 Подробные переменные — в [`.env.example`](.env.example).
+
+## Docker Compose и PostgreSQL
+
+- **Учётные данные Postgres** задаются переменными `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` (подхватываются из окружения или из `.env` рядом с `docker-compose.yml`). Значения по умолчанию `closedhub` / `closedhub` / `closedhub` рассчитаны на **локальную** машину. **В продакшене обязательно задайте сильный `POSTGRES_PASSWORD`** и не оставляйте дефолт.
+- Сервисы **bot** и **web** в Compose получают `DATABASE_URL` на `postgres:5432`, собранный из тех же `POSTGRES_*`, чтобы совпадать с контейнером Postgres.
+- Схема при первом старте по-прежнему подключается как [`db/schema.sql`](db/schema.sql) → `docker-entrypoint-initdb.d`; healthcheck Postgres использует тот же пользователь и имя базы, что и переменные окружения контейнера.
 
 ## Как пользоваться
 
@@ -22,7 +28,9 @@
 
 ### Веб-хаб
 
-- Открыть `http://<хост>:8000` (в LAN удобно узнать URL: [`scripts/print-web-lan-url.sh`](scripts/print-web-lan-url.sh)).
+- **Локально через `uv run … web.main`:** обычно `http://<хост>:8000`.
+- **Через Docker Compose:** снаружи — порт из `WEB_HOST_PORT` (по умолчанию **8001**), внутри сети контейнеров приложение по-прежнему на 8000.
+- В LAN удобно узнать URL: [`scripts/print-web-lan-url.sh`](scripts/print-web-lan-url.sh).
 - **Вход:** указать свой числовой Telegram user id → одноразовый код в ЛС от бота → сессия cookie. Нужен активный участник в БД (whitelist / members).
 - Права «админа» на сайте задаются `WEB_ADMIN_TELEGRAM_IDS` в `.env`.
 
@@ -52,6 +60,10 @@
 
 - Образ: [`Dockerfile`](Dockerfile) — `uv sync --frozen`, команда по умолчанию — бот; в Compose для веба переопределена команда на `web.main`.
 - Зависимости зафиксированы в [`uv.lock`](uv.lock); Python версии: [`.python-version`](.python-version).
+
+## VPS / Aeza
+
+Для выноса на VPS (в том числе Aeza): **TLS** на границе (терминация на reverse proxy или у провайдера), **сильный `POSTGRES_PASSWORD`**, публичный трафик через **reverse proxy** к контейнеру с веб-приложением (и при необходимости отдельная политика доступа к боту/админке). **Проверки живости веба:** `GET /health` (процесс жив) и `GET /ready` (есть соединение с БД). Пошаговый план развёртывания: [`docs/plans/vps_aeza_hosting_plan.md`](docs/plans/vps_aeza_hosting_plan.md). Дополнительные заметки по хостингу: [`.cursor/skills/vps-aeza-hosting/SKILL.md`](.cursor/skills/vps-aeza-hosting/SKILL.md).
 
 ## Лицензия и секреты
 
