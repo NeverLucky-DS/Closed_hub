@@ -40,7 +40,10 @@ class Settings(BaseSettings):
     initial_whitelist_telegram_ids: str = ""
 
     file_storage_path: str = "./storage"
-    max_pdf_size_mb: int = 20
+    # Максимальный размер файла для загрузки в библиотеку (МБ).
+    max_pdf_size_mb: int = 100
+    # Выше этого размера файл не отправляется в LLM на разбор — только ручное описание.
+    library_skip_ai_above_mb: int = 15
 
     mistral_model_routing: str = "mistral-small-latest"
     mistral_model_default: str = "mistral-small-latest"
@@ -52,6 +55,9 @@ class Settings(BaseSettings):
 
     # Jina Reader (https://jina.ai) — для извлечения текста страниц при добавлении ссылок.
     jina_api_key: Optional[str] = None
+
+    # Опциональный GitHub token для AI-чека резюме. Увеличивает лимит REST API.
+    github_token: Optional[str] = None
 
     groq_api_key: Optional[str] = None
 

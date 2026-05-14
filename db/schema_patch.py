@@ -359,6 +359,13 @@ CREATE INDEX IF NOT EXISTS files_embedding_hnsw_idx
     WHERE embedding IS NOT NULL;
 """,
     ),
+    (
+        18,
+        """
+ALTER TABLE member_profiles
+    ALTER COLUMN github_url DROP NOT NULL;
+""",
+    ),
 ]
 
 

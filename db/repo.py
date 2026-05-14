@@ -544,7 +544,9 @@ async def list_resource_topics(pool: asyncpg.Pool) -> list[asyncpg.Record]:
         return list(rows)
 
 
-async def list_resource_topics_with_counts(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+async def list_resource_topics_with_counts(
+    pool: asyncpg.Pool, added_by: int | None = None
+) -> list[asyncpg.Record]:
     async with pool.acquire() as conn:
         try:
             rows = await conn.fetch(
@@ -556,9 +558,11 @@ async def list_resource_topics_with_counts(pool: asyncpg.Pool) -> list[asyncpg.R
                 FROM resource_topics t
                 LEFT JOIN resource_topics p ON p.id = t.parent_id
                 LEFT JOIN resource_links l ON l.topic_id = t.id
+                  AND ($1::bigint IS NULL OR l.added_by = $1)
                 GROUP BY t.id, p.id, p.title
                 ORDER BY links_count DESC, path_title ASC
                 """,
+                added_by,
             )
         except UndefinedTableError:
             return []
@@ -681,6 +685,7 @@ async def semantic_search_resource_links(
     query_vector: list[float],
     limit: int = 15,
     max_distance: float = 0.65,
+    added_by: int | None = None,
 ) -> list[asyncpg.Record]:
     """
     Семантический поиск ссылок по cosine distance.
@@ -703,12 +708,14 @@ async def semantic_search_resource_links(
                     LEFT JOIN resource_topics p ON p.id = t.parent_id
                     WHERE l.embedding IS NOT NULL
                       AND (l.embedding <=> $1::vector) <= $3
+                      AND ($4::bigint IS NULL OR l.added_by = $4)
                     ORDER BY l.embedding <=> $1::vector
                     LIMIT $2
                     """,
                     vector_literal(query_vector),
                     limit,
                     max_distance,
+                    added_by,
                 )
             )
         except Exception:
@@ -796,6 +803,7 @@ async def list_resource_links(
     topic_id: int | None = None,
     query: str = "",
     limit: int = 200,
+    added_by: int | None = None,
 ) -> list[asyncpg.Record]:
     q = (query or "").strip()
     pat = f"%{q}%"
@@ -824,6 +832,7 @@ async def list_resource_links(
                     OR t.title ILIKE $3
                     OR COALESCE(p.title, '') ILIKE $3
                   )
+                  AND ($5::bigint IS NULL OR l.added_by = $5)
                 ORDER BY l.created_at DESC
                 LIMIT $4
                 """,
@@ -831,6 +840,7 @@ async def list_resource_links(
                 q,
                 pat,
                 limit,
+                added_by,
             )
         except UndefinedTableError:
             return []
@@ -1118,7 +1128,7 @@ async def upsert_member_profile(
     *,
     display_name: str | None = None,
     bio: str | None = None,
-    github_url: str | None = None,
+    github_url: Any = _UNSET,
     photo_paths: list[str] | None = None,
     resume_path: Any = _UNSET,
     hf_url: Any = _UNSET,
@@ -1145,7 +1155,7 @@ async def upsert_member_profile(
                 sets.append(f"bio = ${idx}")
                 args.append(bio)
                 idx += 1
-            if github_url is not None:
+            if github_url is not _UNSET:
                 sets.append(f"github_url = ${idx}")
                 args.append(github_url)
                 idx += 1
@@ -1195,6 +1205,7 @@ async def upsert_member_profile(
             edu_ins = None if education_institution is _UNSET else education_institution
             yf_ins = None if education_year_from is _UNSET else education_year_from
             yt_ins = None if education_year_to is _UNSET else education_year_to
+            gh_ins = None if github_url is _UNSET else github_url
             await conn.execute(
                 """
                 INSERT INTO member_profiles (
@@ -1203,14 +1214,14 @@ async def upsert_member_profile(
                     education_year_from, education_year_to, updated_at
                 )
                 VALUES (
-                    $1, $2, $3, COALESCE($4, 'https://github.com/'), COALESCE($5::jsonb, '[]'::jsonb), $6,
+                    $1, $2, $3, $4, COALESCE($5::jsonb, '[]'::jsonb), $6,
                     $7, $8, $9, $10, $11, $12, now()
                 )
                 """,
                 telegram_user_id,
                 display_name,
                 bio,
-                github_url if github_url is not None else "https://github.com/",
+                gh_ins,
                 json.dumps(photo_paths if photo_paths is not None else []),
                 rp_ins,
                 hf_ins,

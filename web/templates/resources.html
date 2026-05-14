@@ -28,6 +28,7 @@
 {% endmacro %}
 
 {% block main %}
+{% set scope = scope or 'all' %}
 <header class="mb-5">
   <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Полезные ссылки</div>
   <h1 class="mt-1 text-2xl md:text-3xl font-semibold tracking-tight">
@@ -35,12 +36,19 @@
   </h1>
   {% if selected_topic %}
   <nav class="mt-3 flex items-center gap-2 text-sm text-ink-300">
-    <a href="/resources" class="hover:text-ink-100">Все темы</a>
+    <a href="/resources{% if scope == 'mine' %}?scope=mine{% endif %}" class="hover:text-ink-100">Все темы</a>
     {{ icon.chevron_right() }}
     <span class="text-ink-100">{{ selected_topic.path_title }}</span>
   </nav>
   {% endif %}
 </header>
+
+<div class="library-scope-tabs mb-4">
+  <a href="{% if selected_topic %}/resources?topic={{ selected_topic.id }}{% else %}/resources{% endif %}"
+     class="library-scope-tab {{ 'active' if scope != 'mine' else '' }}">Общее</a>
+  <a href="{% if selected_topic %}/resources?topic={{ selected_topic.id }}&scope=mine{% else %}/resources?scope=mine{% endif %}"
+     class="library-scope-tab {{ 'active' if scope == 'mine' else '' }}">Личное</a>
+</div>
 
 {% if err %}
 <div class="alert alert-warn mb-4">{{ err }}</div>
@@ -48,6 +56,7 @@
 
 {# Поиск — всегда наверху #}
 <form method="get" action="/resources" class="panel p-3 flex flex-col sm:flex-row gap-2 mb-5">
+  {% if scope == 'mine' %}<input type="hidden" name="scope" value="mine">{% endif %}
   {% if selected_topic %}
   <input type="hidden" name="topic" value="{{ selected_topic.id }}">
   {% endif %}
@@ -56,7 +65,7 @@
   <button class="btn btn-primary shrink-0" type="submit">Искать</button>
   {% if q %}
   <a class="btn shrink-0"
-     href="{% if selected_topic %}/resources?topic={{ selected_topic.id }}{% else %}/resources{% endif %}">
+     href="{% if selected_topic %}/resources?topic={{ selected_topic.id }}{% if scope == 'mine' %}&scope=mine{% endif %}{% else %}/resources{% if scope == 'mine' %}?scope=mine{% endif %}{% endif %}">
     Сбросить
   </a>
   {% endif %}
@@ -91,6 +100,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <input type="hidden" name="step" value="confirm">
         <input type="hidden" name="url" value="{{ draft_url }}">
+        {% if scope == 'mine' %}<input type="hidden" name="scope" value="mine">{% endif %}
 
         <div>
           <div class="text-xs text-ink-400 mb-1">Ссылка</div>
@@ -149,7 +159,7 @@
 
         <div class="flex gap-2 pt-1">
           <button type="submit" class="btn btn-primary flex-1">Сохранить</button>
-          <a href="/resources" class="btn flex-1 text-center">Отменить</a>
+          <a href="/resources{% if scope == 'mine' %}?scope=mine{% endif %}" class="btn flex-1 text-center">Отменить</a>
         </div>
       </form>
 
@@ -165,6 +175,7 @@
 
       <form method="post" action="/resources" class="px-4 pb-4 space-y-3 mt-3">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        {% if scope == 'mine' %}<input type="hidden" name="scope" value="mine">{% endif %}
         <div>
           <label class="block text-xs text-ink-400 mb-1" for="res_url">URL</label>
           <input id="res_url" class="field" type="url" name="url"
@@ -188,7 +199,7 @@
         <div class="text-xs uppercase tracking-[0.18em] text-ink-400 mb-3">Темы</div>
         <div class="library-folder-grid">
           {% for t in visible_topics %}
-          <a href="/resources?topic={{ t.id }}" class="library-folder-card" aria-label="{{ t.path_title }}">
+          <a href="/resources?topic={{ t.id }}{% if scope == 'mine' %}&scope=mine{% endif %}" class="library-folder-card" aria-label="{{ t.path_title }}">
             <img src="/library-folder-icon.webp" class="library-folder-icon" alt="">
             <span class="library-folder-label">{{ t.path_title }}</span>
             <span class="text-xs text-ink-400 num mt-1">{{ t.links_count }}</span>
@@ -213,8 +224,13 @@
         <div class="mx-auto w-12 h-12 rounded-xl bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-accent">
           {{ icon.book() }}
         </div>
+        {% if scope == 'mine' %}
+        <p class="mt-4 text-ink-200">В личном разделе пока нет ссылок.</p>
+        <p class="mt-1 text-sm text-ink-300">Добавь ссылку справа или посмотри общую коллекцию во вкладке «Общее».</p>
+        {% else %}
         <p class="mt-4 text-ink-200">Пока нет ни одной ссылки.</p>
-        <p class="mt-1 text-sm text-ink-300">Добавь первую через форму выше.</p>
+        <p class="mt-1 text-sm text-ink-300">Добавь первую через форму справа.</p>
+        {% endif %}
       </div>
       {% endif %}
 

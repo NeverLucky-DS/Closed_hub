@@ -292,7 +292,9 @@
     nameEl.textContent = draft.original_filename || "Файл";
     tagsEl.textContent = draft.subject_tags ? "Темы: " + draft.subject_tags : "";
     summaryEl.value = draft.summary || "";
-    summaryEl.placeholder = draft.manual_description_required
+    summaryEl.placeholder = draft.large_file_skip_ai
+      ? "Файл больше " + (draft.skip_ai_above_mb || "?") + " МБ — AI не разбирал. Опиши содержимое и отправь заявку кнопкой ниже."
+      : draft.manual_description_required
       ? "AI-разбор не сработал. Опиши файл вручную."
       : "Коротко опиши, что внутри файла";
     categoryEl.innerHTML = "";

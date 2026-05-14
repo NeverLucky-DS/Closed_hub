@@ -31,11 +31,13 @@
         </p>
         {% endif %}
         <div class="mt-4 flex flex-wrap gap-2">
+          {% if p.github_url %}
           <a href="{{ p.github_url }}" rel="noopener noreferrer" target="_blank"
              class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-xl bg-ink-800 ring-1 ring-ink-600 text-ink-200 hover:text-accent hover:ring-accent/40 transition-colors">
             {{ icon.github() }}
             <span class="truncate max-w-[14rem]">{{ p.github_url.replace('https://github.com/', '') }}</span>
           </a>
+          {% endif %}
           {% if p.hf_url %}
           <a href="{{ p.hf_url }}" rel="noopener noreferrer" target="_blank"
              class="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-xl bg-ink-800 ring-1 ring-ink-600 text-ink-200 hover:text-accent hover:ring-accent/40 transition-colors">

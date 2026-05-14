@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS member_profiles (
     telegram_user_id BIGINT PRIMARY KEY REFERENCES members (telegram_user_id) ON DELETE CASCADE,
     display_name TEXT,
     bio TEXT,
-    github_url TEXT NOT NULL DEFAULT 'https://github.com/',
+    github_url TEXT,
     photo_paths JSONB NOT NULL DEFAULT '[]'::jsonb,
     resume_path TEXT,
     hf_url TEXT,

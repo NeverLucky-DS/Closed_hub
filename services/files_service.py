@@ -12,6 +12,7 @@ from telegram.constants import ParseMode
 from config import get_settings
 from db import repo
 from services import activity, file_storage, llm
+from utils.text_slug import slugify_folder
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +76,9 @@ async def prepare_file_upload(
     if len(data) > max_b:
         return {"ok": False, "error": f"Файл слишком большой. Лимит {settings.max_pdf_size_mb} МБ."}
 
+    skip_ai_b = max(0, int(settings.library_skip_ai_above_mb)) * 1024 * 1024
+    skip_llm = skip_ai_b > 0 and len(data) > skip_ai_b
+
     h = hashlib.sha256(data).hexdigest()
     existing = await repo.find_active_file_by_sha256(pool, h)
     if existing:
@@ -108,15 +112,19 @@ async def prepare_file_upload(
     cat = "other"
     tags_s = None
     analysis_failed = False
-    try:
-        summ = await llm.summarize_file(pool, text_sample, block)
-        summary = str(summ.get("summary_ru") or "")
-        cat = str(summ.get("suggested_category_slug") or "other")
-        tags = summ.get("subject_tags")
-        tags_s = str(tags) if tags else None
-    except Exception:
-        log.exception("summarize_file")
-        analysis_failed = True
+    large_no_ai = False
+    if skip_llm:
+        large_no_ai = True
+    else:
+        try:
+            summ = await llm.summarize_file(pool, text_sample, block)
+            summary = str(summ.get("summary_ru") or "")
+            cat = str(summ.get("suggested_category_slug") or "other")
+            tags = summ.get("subject_tags")
+            tags_s = str(tags) if tags else None
+        except Exception:
+            log.exception("summarize_file")
+            analysis_failed = True
 
     if cat not in slugs:
         cat = "other"
@@ -136,6 +144,7 @@ async def prepare_file_upload(
         uploader_handle=uploader_handle,
     )
     cat_label = next((r["label_ru"] for r in categories if r["slug"] == cat), cat)
+    manual_required = (analysis_failed and not summary.strip()) or large_no_ai
     return {
         "ok": True,
         "file_id": int(file_id_row),
@@ -147,7 +156,9 @@ async def prepare_file_upload(
         "subject_tags": tags_s,
         "categories": categories,
         "analysis_failed": analysis_failed,
-        "manual_description_required": analysis_failed and not summary.strip(),
+        "large_file_skip_ai": large_no_ai,
+        "manual_description_required": manual_required,
+        "skip_ai_above_mb": int(settings.library_skip_ai_above_mb),
     }
 
 
@@ -164,6 +175,7 @@ async def finalize_file_to_library(
     row = await repo.get_file_record(pool, file_id)
     if not row or int(row["uploaded_by"]) != user_id:
         return False
+    slug = slugify_folder(slug)
     cats = await repo.list_file_categories(pool)
     known = {c["slug"] for c in cats}
     if slug not in known:
@@ -171,7 +183,11 @@ async def finalize_file_to_library(
     elif label_ru:
         await repo.ensure_file_category(pool, slug, label_ru, user_id)
     fn = Path(row["storage_path"]).name
-    new_path = file_storage.move_into_category_folder(str(row["storage_path"]), slug, fn)
+    try:
+        new_path = file_storage.move_into_category_folder(str(row["storage_path"]), slug, fn)
+    except ValueError:
+        log.warning("finalize_file_to_library rejected unsafe path file_id=%s slug=%r", file_id, slug)
+        return False
     await repo.update_file_record(
         pool,
         file_id,

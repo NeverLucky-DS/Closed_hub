@@ -14,7 +14,7 @@
   <script>
     (function () {
       var allowed = { dark: true, "telegram-blue": true, light: true, sand: true };
-      var theme = "telegram-blue";
+      var theme = "dark";
       try {
         var saved = localStorage.getItem("hub_theme");
         if (saved && allowed[saved]) theme = saved;
@@ -178,7 +178,7 @@
   };
 
   function applyTheme(theme) {
-    if (!themeColors[theme]) theme = "telegram-blue";
+    if (!themeColors[theme]) theme = "dark";
     document.documentElement.setAttribute("data-theme", theme);
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", themeColors[theme]);
@@ -190,7 +190,7 @@
 
   window.setHubTheme = applyTheme;
   window.getHubTheme = function () {
-    return document.documentElement.getAttribute("data-theme") || "telegram-blue";
+    return document.documentElement.getAttribute("data-theme") || "dark";
   };
 
   applyTheme(window.getHubTheme());

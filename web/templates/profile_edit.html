@@ -31,8 +31,8 @@
                placeholder="как обращаться на главной и в списке людей" value="{{ p.display_name or '' }}">
       </div>
       <div>
-        <label for="github_url" class="block text-sm text-ink-200 mb-1.5">GitHub <span class="text-rose-300">*</span></label>
-        <input id="github_url" name="github_url" type="text" class="field" required
+        <label for="github_url" class="block text-sm text-ink-200 mb-1.5">GitHub</label>
+        <input id="github_url" name="github_url" type="text" class="field"
                placeholder="https://github.com/username" value="{{ p.github_url or '' }}">
         <p class="mt-1.5 text-xs text-ink-300">Формат: <span class="num">https://github.com/username</span></p>
       </div>
@@ -117,22 +117,22 @@
     <div class="panel p-5">
       <div class="section-title mb-3">Оформление</div>
       <p class="text-sm text-ink-300 leading-relaxed">
-        Тема сохраняется в этом браузере. Основная новая схема — тёмно-синяя, ближе к Telegram.
+        Тема сохраняется в этом браузере. По умолчанию используется Classic Dark.
       </p>
       <div class="theme-grid mt-4" id="themeChoices">
+        <button type="button" class="theme-option" data-theme-choice="dark">
+          <span>
+            <span class="block text-sm font-medium">Classic Dark</span>
+            <span class="block text-xs text-ink-300">стандартная тёмная</span>
+          </span>
+          <span class="theme-swatch" data-theme-swatch="dark" aria-hidden="true"></span>
+        </button>
         <button type="button" class="theme-option" data-theme-choice="telegram-blue">
           <span>
             <span class="block text-sm font-medium">Telegram Blue</span>
             <span class="block text-xs text-ink-300">тёмно-синяя</span>
           </span>
           <span class="theme-swatch" data-theme-swatch="telegram-blue" aria-hidden="true"></span>
-        </button>
-        <button type="button" class="theme-option" data-theme-choice="dark">
-          <span>
-            <span class="block text-sm font-medium">Classic Dark</span>
-            <span class="block text-xs text-ink-300">текущая тёмная</span>
-          </span>
-          <span class="theme-swatch" data-theme-swatch="dark" aria-hidden="true"></span>
         </button>
         <button type="button" class="theme-option" data-theme-choice="light">
           <span>
@@ -150,7 +150,7 @@
         </button>
       </div>
       <p class="mt-3 text-xs text-ink-300">
-        Сейчас выбрана: <span id="theme-current-label" class="text-ink-100">Telegram Blue</span>
+        Сейчас выбрана: <span id="theme-current-label" class="text-ink-100">Classic Dark</span>
       </p>
     </div>
 
@@ -320,11 +320,11 @@
     themeButtons.forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-theme-choice') === theme);
     });
-    if (currentLabel) currentLabel.textContent = labels[theme] || labels['telegram-blue'];
+    if (currentLabel) currentLabel.textContent = labels[theme] || labels.dark;
   }
 
   if (themeButtons.length) {
-    paintThemeButtons(window.getHubTheme ? window.getHubTheme() : 'telegram-blue');
+    paintThemeButtons(window.getHubTheme ? window.getHubTheme() : 'dark');
     themeButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         const theme = btn.getAttribute('data-theme-choice');

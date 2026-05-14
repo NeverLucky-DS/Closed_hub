@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import httpx
 from pypdf import PdfReader
 
+from config import get_settings
 from db import repo
 from services import llm
 from services.file_storage import profile_root
@@ -76,22 +77,32 @@ def _repo_line(item: dict[str, Any]) -> str:
     return " | ".join(bits)
 
 
+def _github_limit_message(token_used: bool, repos: bool = False) -> str:
+    target = " к репозиториям" if repos else ""
+    if token_used:
+        return f"GitHub ограничил запросы{target} даже с token. Проверьте лимит GitHub token или попробуйте позже."
+    return f"GitHub ограничил публичные запросы{target} без авторизации. Попробуйте позже."
+
+
 async def _fetch_github_public(username: str) -> tuple[str, dict[str, Any]]:
+    token = (get_settings().github_token or "").strip()
     headers = {
         "Accept": "application/vnd.github+json",
         "User-Agent": "ClosedHubProfileAnalysis/1.0",
     }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     timeout = httpx.Timeout(12.0, connect=5.0)
     base = "https://api.github.com"
     try:
         async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
             user_resp = await client.get(f"{base}/users/{username}")
+            if user_resp.status_code == 401:
+                raise ProfileAnalysisError("GitHub token не принят. Проверьте GITHUB_TOKEN в .env.")
             if user_resp.status_code == 404:
                 raise ProfileAnalysisError("GitHub-профиль не найден.")
             if user_resp.status_code == 403:
-                raise ProfileAnalysisError(
-                    "GitHub ограничил публичные запросы без авторизации. Попробуйте позже."
-                )
+                raise ProfileAnalysisError(_github_limit_message(bool(token)))
             user_resp.raise_for_status()
             user = user_resp.json()
 
@@ -99,10 +110,10 @@ async def _fetch_github_public(username: str) -> tuple[str, dict[str, Any]]:
                 f"{base}/users/{username}/repos",
                 params={"type": "owner", "sort": "updated", "per_page": 40},
             )
+            if repos_resp.status_code == 401:
+                raise ProfileAnalysisError("GitHub token не принят. Проверьте GITHUB_TOKEN в .env.")
             if repos_resp.status_code == 403:
-                raise ProfileAnalysisError(
-                    "GitHub ограничил публичные запросы к репозиториям без авторизации. Попробуйте позже."
-                )
+                raise ProfileAnalysisError(_github_limit_message(bool(token), repos=True))
             repos_resp.raise_for_status()
             repos = repos_resp.json()
     except ProfileAnalysisError:
@@ -132,7 +143,8 @@ async def _fetch_github_public(username: str) -> tuple[str, dict[str, Any]]:
         "github_username": username,
         "github_public_repos_found": len(public_repos),
         "github_repos_used": len(used_repos),
-        "github_api": "public REST API without OAuth",
+        "github_api": "public REST API with token" if token else "public REST API without OAuth",
+        "github_token_used": bool(token),
     }
     return "\n".join(lines), source_info
 

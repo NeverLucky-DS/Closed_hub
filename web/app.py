@@ -19,7 +19,7 @@ import mimetypes
 from datetime import date, datetime, timedelta, timezone
 from datetime import time as dt_time
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 from fastapi.staticfiles import StaticFiles
 from markupsafe import Markup, escape
@@ -67,6 +67,7 @@ _VERIFY_LOCK_SEC = 300.0
 _REACTION_EMOJIS = ("👍", "❤️", "🔥", "🤔", "🎉")
 _URL_RE = re.compile(r"https?://[^\s<>'\"]+", re.IGNORECASE)
 _URL_TRAILING_PUNCT = ".,!?;:)]}»”"
+_SENSITIVE_PATH = re.compile(r"(?:^|/)\.env(?:$|[?#]|/)|(?:^|/)\.git(?:/|$)", re.I)
 _CSRF_SESSION_KEY = "csrf_token"
 _CSRF_HEADER = "x-csrf-token"
 _SAFE_INLINE_MIME = {
@@ -127,6 +128,10 @@ def _otp_hash(secret: str, code: str) -> str:
 def _github_ok(url: str) -> bool:
     u = (url or "").strip().rstrip("/")
     return u.startswith("https://github.com/") and len(u) > len("https://github.com/")
+
+
+def _resources_scope_suffix(scope: str) -> str:
+    return "&scope=mine" if scope == "mine" else ""
 
 
 def _optional_https_url(raw: str | None) -> tuple[str | None, str | None]:
@@ -598,6 +603,9 @@ app = FastAPI(title="Closed hub web", lifespan=lifespan)
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
+    path = request.url.path.replace("\\", "/")
+    if _SENSITIVE_PATH.search(path):
+        return Response(status_code=404)
     response = await call_next(request)
     _add_security_headers(response)
     return response
@@ -1078,7 +1086,8 @@ async def api_library_upload_confirm(
         chosen_slug = slugify_folder(custom_label)
         label = custom_label[:120]
     else:
-        chosen_slug = (slug or frow.get("suggested_category") or "other").strip() or "other"
+        raw_slug = (slug or frow.get("suggested_category") or "other").strip() or "other"
+        chosen_slug = slugify_folder(raw_slug)
         label = known.get(chosen_slug, chosen_slug)
     if manual_summary:
         await repo.update_file_record(pool, file_id, summary=manual_summary)
@@ -1324,6 +1333,7 @@ async def page_resources(
     request: Request,
     topic: int | None = None,
     q: str = "",
+    scope: str = "all",
     pool=Depends(pool_dep),
 ):
     uid = session_uid(request)
@@ -1333,13 +1343,19 @@ async def page_resources(
         request.session.clear()
         return RedirectResponse("/login", status_code=302)
 
-    topics = await repo.list_resource_topics_with_counts(pool)
+    scope = "mine" if scope == "mine" else "all"
+    scope_uid = uid if scope == "mine" else None
+
+    topics = await repo.list_resource_topics_with_counts(pool, added_by=scope_uid)
     all_topics = await repo.list_resource_topics(pool)
     selected = None
     if topic is not None:
         selected = await repo.get_resource_topic(pool, topic)
         if not selected:
-            return RedirectResponse("/resources?err=Тема+не+найдена", status_code=303)
+            return RedirectResponse(
+                f"/resources?err=Тема+не+найдена{_resources_scope_suffix(scope)}",
+                status_code=303,
+            )
 
     query = (q or "").strip()
 
@@ -1350,16 +1366,28 @@ async def page_resources(
             vec = await ss.query_vector(query)
             links = []
             if vec:
-                links = await repo.semantic_search_resource_links(pool, vec, limit=50)
+                links = await repo.semantic_search_resource_links(
+                    pool, vec, limit=50, added_by=scope_uid
+                )
             if not links:
-                links = await repo.list_resource_links(pool, topic_id=None, query=query, limit=300)
+                links = await repo.list_resource_links(
+                    pool, topic_id=None, query=query, limit=300, added_by=scope_uid
+                )
         except Exception:
-            links = await repo.list_resource_links(pool, topic_id=None, query=query, limit=300)
+            links = await repo.list_resource_links(
+                pool, topic_id=None, query=query, limit=300, added_by=scope_uid
+            )
     else:
-        links = await repo.list_resource_links(pool, topic_id=topic, query=query, limit=300)
+        links = await repo.list_resource_links(
+            pool, topic_id=topic, query=query, limit=300, added_by=scope_uid
+        )
 
     # 10 последних для главного экрана (папки + Недавние)
-    recent_links = await repo.list_resource_links(pool, limit=10) if topic is None and not query else []
+    recent_links = (
+        await repo.list_resource_links(pool, limit=10, added_by=scope_uid)
+        if topic is None and not query
+        else []
+    )
     return _templates.TemplateResponse(
         request,
         "resources.html",
@@ -1379,6 +1407,7 @@ async def page_resources(
             "draft_url": "",
             "draft_preselect_topic_id": None,
             "draft_preselect_new_topic": "",
+            "scope": scope,
         },
         headers=_no_store_headers(),
     )
@@ -1395,6 +1424,7 @@ async def resources_add_link(
     step: str = Form(""),
     draft_title: str = Form(""),
     draft_ai_summary: str = Form(""),
+    scope: str = Form("all"),
     _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
@@ -1404,9 +1434,13 @@ async def resources_add_link(
         request.session.clear()
         return RedirectResponse("/login", status_code=302)
 
+    scope = "mine" if (scope or "").strip() == "mine" else "all"
+    scope_sfx = _resources_scope_suffix(scope)
+    scope_uid = uid if scope == "mine" else None
+
     norm_url, err = resources_service.normalize_url(url)
     if err:
-        return RedirectResponse(f"/resources?err={quote_plus(err)}", status_code=303)
+        return RedirectResponse(f"/resources?err={quote_plus(err)}{scope_sfx}", status_code=303)
     assert norm_url is not None
 
     # Шаг 2: пользователь уже видел черновик и нажал «Сохранить»
@@ -1415,14 +1449,14 @@ async def resources_add_link(
         existing = await repo.find_resource_link_by_url(pool, norm_url)
         if existing:
             return RedirectResponse(
-                f"/resources?err={quote_plus('Ссылка уже есть: ' + str(existing['title']))}",
+                f"/resources?err={quote_plus('Ссылка уже есть: ' + str(existing['title']))}{scope_sfx}",
                 status_code=303,
             )
 
         note = resources_service.normalize_note(user_note)
         if len(note) < 3:
             return RedirectResponse(
-                "/resources?err=Добавь+короткое+описание+пользы+ссылки",
+                f"/resources?err=Добавь+короткое+описание+пользы+ссылки{scope_sfx}",
                 status_code=303,
             )
 
@@ -1434,7 +1468,7 @@ async def resources_add_link(
             slug, ttl, topic_err = resources_service.normalize_topic_title(topic_title)
             if topic_err or not slug or not ttl:
                 return RedirectResponse(
-                    f"/resources?err={quote_plus(topic_err or 'Некорректная тема')}",
+                    f"/resources?err={quote_plus(topic_err or 'Некорректная тема')}{scope_sfx}",
                     status_code=303,
                 )
             tid = await repo.ensure_resource_topic(pool, slug, ttl, uid)
@@ -1442,9 +1476,9 @@ async def resources_add_link(
             try:
                 tid = int((topic_id or "").strip())
             except ValueError:
-                return RedirectResponse("/resources?err=Выбери+тему", status_code=303)
+                return RedirectResponse(f"/resources?err=Выбери+тему{scope_sfx}", status_code=303)
             if not await repo.get_resource_topic(pool, tid):
-                return RedirectResponse("/resources?err=Тема+не+найдена", status_code=303)
+                return RedirectResponse(f"/resources?err=Тема+не+найдена{scope_sfx}", status_code=303)
 
         rid = await repo.insert_resource_link(
             pool,
@@ -1461,20 +1495,20 @@ async def resources_add_link(
             await embedding_service.refresh_resource_link_embedding(pool, rid)
         except Exception:
             pass
-        return RedirectResponse(f"/resources?topic={tid}&created={rid}", status_code=303)
+        return RedirectResponse(f"/resources?topic={tid}&created={rid}{scope_sfx}", status_code=303)
 
     # Шаг 1: проверяем дубликат до запроса к Jina
     existing = await repo.find_resource_link_by_url(pool, norm_url)
     if existing:
         return RedirectResponse(
-            f"/resources?err={quote_plus('Ссылка уже есть: ' + str(existing['title']))}",
+            f"/resources?err={quote_plus('Ссылка уже есть: ' + str(existing['title']))}{scope_sfx}",
             status_code=303,
         )
 
     # Строим AI-черновик и показываем форму подтверждения
     draft = await resources_service.fetch_and_enrich_link(pool, norm_url)
 
-    topics = await repo.list_resource_topics_with_counts(pool)
+    topics = await repo.list_resource_topics_with_counts(pool, added_by=scope_uid)
     all_topics = await repo.list_resource_topics(pool)
 
     # Если AI предложил тему — попробуем найти её в существующих
@@ -1508,6 +1542,7 @@ async def resources_add_link(
             "draft_url": norm_url,
             "draft_preselect_topic_id": preselect_topic_id,
             "draft_preselect_new_topic": preselect_new_topic,
+            "scope": scope,
         },
         headers=_no_store_headers(),
     )
@@ -2396,22 +2431,6 @@ async def page_me_save(
         request.session.clear()
         return RedirectResponse("/login", status_code=302)
 
-    g = github_url.strip()
-    if not _github_ok(g):
-        return _templates.TemplateResponse(
-            request,
-            "profile_edit.html",
-            {
-                "title": "Мой профиль",
-                "nav": "me",
-                "p": await repo.get_member_profile(pool, uid),
-                "uid": uid,
-                "github_ok": _github_ok,
-                "error": "Укажите ссылку вида https://github.com/username",
-            },
-            status_code=400,
-        )
-
     async def prof_err(msg: str):
         return _templates.TemplateResponse(
             request,
@@ -2426,6 +2445,11 @@ async def page_me_save(
             },
             status_code=400,
         )
+
+    g = github_url.strip()
+    if g and not _github_ok(g):
+        return await prof_err("Укажите ссылку вида https://github.com/username или оставьте поле пустым.")
+    github_stored = g if _github_ok(g) else None
 
     hf_u, hf_e = _optional_https_url(hf_url)
     if hf_e:
@@ -2583,7 +2607,7 @@ async def page_me_save(
         uid,
         display_name=display_name.strip() or None,
         bio=bio.strip() or None,
-        github_url=g,
+        github_url=github_stored,
         photo_paths=final_photos,
         resume_path=resume_relpath,
         hf_url=hf_u,

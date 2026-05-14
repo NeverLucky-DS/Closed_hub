@@ -1236,8 +1236,8 @@ html[data-theme="light"] .group:hover .group-hover\:text-white {
 }
 
 .sidebar-nav-icon {
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 2.5rem;
+  height: 2.5rem;
   object-fit: contain;
   flex-shrink: 0;
   opacity: 0.82;
