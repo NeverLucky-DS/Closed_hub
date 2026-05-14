@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% import "_icons.html" as icon %}
 {% block main %}
+{% set scope = scope or 'all' %}
+{% set scope_q = '&scope=mine' if scope == 'mine' else '' %}
+{% set scope_param = '?scope=mine' if scope == 'mine' else '' %}
 <header class="mb-7 {% if view == 'files' and selected %}max-md:hidden{% endif %}">
   <div class="text-xs uppercase tracking-[0.2em] text-ink-300">Библиотека</div>
   <h1 class="mt-1 text-2xl md:text-3xl font-semibold tracking-tight">
@@ -12,17 +15,95 @@
     {{ icon.chevron_right() }}
     <span class="text-ink-100">{{ category_label }}</span>
   </nav>
-  {% else %}
-  <p class="mt-1 text-sm text-ink-300">Папка с подтверждёнными файлами по каждой теме. Файлы добавляются через бота.</p>
   {% endif %}
 </header>
 
-{% if view == 'folders' %}
+<div class="library-scope-tabs mb-4">
+  <a href="/library?scope=all{% if category %}&cat={{ category }}{% endif %}{% if selected %}&file={{ selected.id }}{% endif %}"
+     class="library-scope-tab {{ 'active' if scope != 'mine' else '' }}">Общее</a>
+  <a href="/library?scope=mine{% if category %}&cat={{ category }}{% endif %}{% if selected %}&file={{ selected.id }}{% endif %}"
+     class="library-scope-tab {{ 'active' if scope == 'mine' else '' }}">Личное</a>
+</div>
+
+<form method="get" action="/library" class="panel p-3 flex flex-col sm:flex-row gap-2 mb-5">
+  {% if scope == 'mine' %}<input type="hidden" name="scope" value="mine">{% endif %}
+  <input class="field" type="search" name="q" value="{{ q or '' }}"
+         placeholder="Искать по названию, описанию или теме">
+  <button class="btn btn-primary shrink-0" type="submit">Искать</button>
+  {% if q %}
+  <a class="btn shrink-0" href="/library{{ scope_param }}">Сбросить</a>
+  {% endif %}
+</form>
+
+<section id="library-upload" class="panel p-3 md:p-4 mb-5" data-scope="{{ scope }}">
+  <input id="library-upload-input" type="file" class="sr-only">
+  <label id="library-upload-drop" for="library-upload-input" class="library-upload-drop">
+    <span class="text-accent">{{ icon.plus() }}</span>
+    <span>Перетащи файл сюда или выбери с диска</span>
+  </label>
+  <div id="library-upload-status" class="mt-3 text-sm text-ink-300" hidden></div>
+  <article id="library-upload-draft" class="library-upload-draft mt-3" hidden>
+    <div class="min-w-0 flex-1">
+      <div id="library-upload-name" class="text-sm font-semibold text-ink-100 break-words"></div>
+      <div id="library-upload-tags" class="mt-1 text-xs text-ink-300"></div>
+      <textarea id="library-upload-summary" class="field mt-3 text-sm" rows="4"
+                placeholder="Коротко опиши, что внутри файла"></textarea>
+      <select id="library-upload-category" class="field mt-3 text-sm"></select>
+      <input id="library-upload-custom-folder" class="field mt-3 text-sm" type="text"
+             placeholder="Название новой папки" hidden>
+    </div>
+    <div class="flex gap-2 shrink-0">
+      <button id="library-upload-confirm" type="button" class="btn btn-primary">{{ icon.sparkle() }}<span>Подтвердить</span></button>
+      <button id="library-upload-cancel" type="button" class="btn btn-ghost">{{ icon.x() }}</button>
+    </div>
+  </article>
+</section>
+
+{% if view == 'search' %}
+  <div class="text-xs uppercase tracking-[0.18em] text-ink-400 mb-3">
+    {{ search_files | length }} {{ search_files | length | ru_plural(['файл','файла','файлов']) }} по запросу «{{ q }}»
+  </div>
+  {% if search_files %}
+  <div class="space-y-2">
+    {% for f in search_files %}
+    {% set kind = f | file_kind %}
+    <article class="panel p-4">
+      <div class="flex items-start gap-3">
+        <span class="mt-0.5 text-ink-300 shrink-0">
+          {% if kind == 'pdf' %}{{ icon.file_pdf() }}
+          {% elif kind == 'image' %}{{ icon.file_image() }}
+          {% else %}{{ icon.file_text() }}{% endif %}
+        </span>
+        <div class="min-w-0 flex-1">
+          <a href="/library?cat={{ f.confirmed_category }}&file={{ f.id }}{{ scope_q }}"
+             class="font-semibold text-ink-100 hover:text-accent text-sm leading-snug">
+            {{ f.original_filename or ('#' ~ f.id) }}
+          </a>
+          <div class="mt-0.5 text-xs text-ink-400">
+            {{ f.category_label or f.confirmed_category }} · {{ f.uploader_handle or f.uploaded_by }} · {{ (f.confirmed_at or f.created_at) | dt_short }}
+          </div>
+          {% if f.summary %}
+          <p class="mt-1.5 text-sm text-ink-200 leading-relaxed">{{ f.summary | truncate(160) }}</p>
+          {% endif %}
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state p-10">
+    <img src="/library-folder-icon.webp" class="library-folder-empty-icon" alt="">
+    <p class="mt-4 text-ink-200">Ничего не нашлось по запросу «{{ q }}».</p>
+    <p class="mt-1 text-sm text-ink-300">Попробуй другой запрос или выбери папку.</p>
+  </div>
+  {% endif %}
+
+{% elif view == 'folders' %}
   {% set visible = categories | selectattr('files_count', 'gt', 0) | list %}
   {% if visible %}
   <div class="library-folder-grid">
     {% for c in visible %}
-    <a href="/library?cat={{ c.slug }}" class="library-folder-card" aria-label="{{ c.label_ru }}">
+    <a href="/library?cat={{ c.slug }}{{ scope_q }}" class="library-folder-card" aria-label="{{ c.label_ru }}">
       <img src="/library-folder-icon.webp" class="library-folder-icon" alt="">
       <span class="library-folder-label">{{ c.label_ru }}</span>
     </a>
@@ -32,11 +113,10 @@
   <div class="empty-state p-10">
     <img src="/library-folder-icon.webp" class="library-folder-empty-icon" alt="">
     <p class="mt-4 text-ink-200">Пока нет ни одной темы с файлами.</p>
-    <p class="mt-1 text-sm text-ink-300">Пришли документ боту — он предложит папку, и она появится здесь.</p>
+    <p class="mt-1 text-sm text-ink-300">Загрузи файл выше — после подтверждения появится папка.</p>
   </div>
   {% endif %}
 
-  {# Список «Все темы» (включая пустые) — компактно ниже #}
   {% set empty = categories | selectattr('files_count', 'eq', 0) | list %}
   {% if empty %}
   <details class="mt-8 group">
@@ -63,7 +143,7 @@
         {% set kind = f | file_kind %}
         {% set is_active = selected and selected.id == f.id %}
         <li class="flex items-stretch border-b border-ink-600/60 hover:bg-ink-700/40 transition {{ 'bg-ink-700' if is_active else '' }}">
-          <a href="/library?cat={{ category }}&file={{ f.id }}"
+          <a href="/library?cat={{ category }}&file={{ f.id }}{{ scope_q }}"
              class="flex items-start gap-3 px-3 py-2.5 flex-1 min-w-0">
             <span class="mt-0.5 text-ink-300">
               {% if kind == 'pdf' %}{{ icon.file_pdf() }}
@@ -98,80 +178,51 @@
            data-dl-url="{{ dl_url }}"
            data-view-url="{{ view_url }}"
            data-filename="{{ safe_filename }}"></div>
-      <div class="md:hidden sticky z-[25] -mx-4 px-4 py-2.5 mb-0 border-b border-ink-600/50 bg-ink-900/98 backdrop-blur-sm"
-           style="top: var(--app-mobile-chrome-h, 4.5rem);">
-        <a href="/library?cat={{ category }}"
-           class="inline-flex items-center gap-2 text-sm font-medium text-ink-100 hover:text-accent min-h-[44px] rounded-lg -mx-1 px-1"
-           title="Вернуться к списку (в PWA нет системной «Назад»)">
-          <span class="text-accent">{{ icon.arrow_left() }}</span>
-          Назад к списку
-        </a>
-      </div>
       {% if attach_err %}
       <div class="alert alert-warn mx-4 mt-3 text-xs">
         {% if attach_err == 'forbidden' %}Можно закреплять только свои файлы.{% elif attach_err == 'not_file' %}Файл не найден или ещё не в библиотеке.{% elif attach_err == 'dup' %}Уже закреплён за этой компанией.{% elif attach_err == 'no_company' %}Компания не найдена.{% elif attach_err == 'bad_params' %}Некорректные данные.{% else %}Не удалось закрепить.{% endif %}
       </div>
       {% endif %}
-      {% if (selected.uploaded_by == uid or is_admin) and companies_for_attach %}
-      <div class="px-4 py-3 border-b border-ink-600/80 bg-ink-800/30">
-        <div class="text-xs uppercase tracking-wider text-ink-400 mb-2">Карточка компании на сайте</div>
-        <form method="post" action="/library/attach-company" class="flex flex-col sm:flex-row gap-2 sm:items-end max-w-xl">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-          <input type="hidden" name="cat" value="{{ category }}">
-          <input type="hidden" name="file_id" value="{{ selected.id }}">
-          <div class="flex-1 min-w-0">
-            <label class="block text-xs text-ink-400 mb-1">Компания</label>
-            <select name="company_id" required class="field rounded-xl bg-ink-800 border-ink-600 px-3 py-2 text-sm text-ink-100">
-              {% for co in companies_for_attach %}
-              <option value="{{ co.id }}">{{ co.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <button type="submit" class="btn btn-primary min-h-[44px] whitespace-nowrap">
-            Закрепить файл
-          </button>
-        </form>
-      </div>
-      {% elif selected.uploaded_by == uid or is_admin %}
-      <div class="px-4 py-3 border-b border-ink-600/80 bg-ink-800/20 text-sm text-ink-300">
-        Чтобы закрепить файл за компанией, сначала добавь <a href="/companies/new" class="text-accent hover:underline">карточку компании</a> или открой <a href="/companies" class="text-accent hover:underline">список компаний</a>.
-      </div>
-      {% endif %}
       {% set kind = selected | file_kind %}
-      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-3 md:px-4 py-3 border-b border-ink-600/50">
-        <div class="min-w-0">
-          <div class="hidden md:block text-sm text-ink-100 break-words">{{ selected.original_filename or ('#' ~ selected.id) }}</div>
-          <div class="md:hidden text-sm font-medium text-ink-100 break-words leading-snug">{{ selected.original_filename or ('#' ~ selected.id) }}</div>
-          <div class="text-[11px] md:text-xs text-ink-300 num mt-0.5 md:mt-0">
-            {{ selected.uploader_handle or selected.uploaded_by }} ·
-            {{ (selected.confirmed_at or selected.created_at) | dt_short }}
-            <span class="hidden md:inline">{% if selected.mime_type %} · {{ selected.mime_type }}{% endif %}</span>
+      <div class="library-file-toolbar">
+        <a href="/library?cat={{ category }}{{ scope_q }}" class="library-icon-btn md:hidden" title="Назад">
+          {{ icon.arrow_left() }}
+        </a>
+        <div class="library-file-caption">
+          <div class="library-file-name">{{ selected.original_filename or ('#' ~ selected.id) }}</div>
+          <div class="library-file-meta">
+            {{ selected.uploader_handle or selected.uploaded_by }} · {{ (selected.confirmed_at or selected.created_at) | dt_short }}
           </div>
         </div>
-        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-shrink-0 w-full md:w-auto">
-          {% if is_admin %}
-          <button type="button" class="btn btn-danger text-xs admin-del-file min-h-[44px]" data-fid="{{ selected.id }}" title="Удалить файл">{{ icon.trash() }}<span>Удалить</span></button>
+        <div class="library-file-actions">
+          {% if (selected.uploaded_by == uid or is_admin) and companies_for_attach %}
+          <details class="library-action-menu">
+            <summary class="library-icon-btn" title="Закрепить за компанией">{{ icon.building() }}</summary>
+            <form method="post" action="/library/attach-company" class="library-action-popover">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+              <input type="hidden" name="cat" value="{{ category }}">
+              <input type="hidden" name="file_id" value="{{ selected.id }}">
+              <input type="hidden" name="scope" value="{{ scope }}">
+              <select name="company_id" required class="field text-sm">
+                {% for co in companies_for_attach %}
+                <option value="{{ co.id }}">{{ co.name }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-primary w-full justify-center">{{ icon.building() }}<span>Закрепить</span></button>
+            </form>
+          </details>
           {% endif %}
-          <a class="hidden md:inline-flex btn items-center justify-center min-h-[40px]" href="{{ dl_url }}">
-            {{ icon.download() }}<span>Скачать</span>
+          {% if is_admin %}
+          <button type="button" class="library-icon-btn library-icon-danger admin-del-file" data-fid="{{ selected.id }}" title="Удалить файл">{{ icon.trash() }}</button>
+          {% endif %}
+          <a class="hidden md:inline-flex library-icon-btn" href="{{ dl_url }}" title="Скачать">
+            {{ icon.download() }}
           </a>
-          <button type="button" class="md:hidden library-blob-download btn btn-primary items-center justify-center gap-2 min-h-[48px] text-center w-full">
-            {{ icon.download() }}<span>{% if kind == 'pdf' %}Сохранить PDF{% else %}Сохранить файл{% endif %}</span>
+          <button type="button" class="md:hidden library-blob-download library-icon-btn" title="Скачать">
+            {{ icon.download() }}<span class="sr-only">Скачать</span>
           </button>
         </div>
       </div>
-      <p class="hidden md:block px-4 py-2 text-xs text-ink-300 border-b border-ink-600/80">
-        Превью ниже — только просмотр в браузере. Файл сохранится на диск только по кнопке «Скачать».
-      </p>
-      <details class="md:hidden group mx-3 my-2 rounded-xl border border-ink-600/60 bg-ink-800/40 text-xs text-ink-300">
-        <summary class="cursor-pointer list-none px-3 py-2.5 font-medium text-ink-200 [&::-webkit-details-marker]:hidden flex items-center justify-between gap-2">
-          <span>Совет для iPhone</span>
-          <span class="text-ink-400 shrink-0 transition-transform group-open:rotate-180">{{ icon.chevron_down() }}</span>
-        </summary>
-        <div class="px-3 pb-3 pt-0 text-ink-300/95 leading-relaxed border-t border-ink-600/40">
-          Скачивание идёт через сайт. Если откроется превью — «Поделиться» → «Сохранить в файлы».
-        </div>
-      </details>
       {% if kind == 'pdf' %}
         <div class="viewer-frame-wrap hidden md:flex">
           <iframe class="viewer-frame" src="/api/library/{{ selected.id }}/raw#toolbar=1&navpanes=0" title="PDF"></iframe>
@@ -186,12 +237,6 @@
         <div class="flex flex-col items-center justify-center text-center px-6 py-16 gap-3 flex-1">
           <span class="text-accent">{{ icon.file_text() }}</span>
           <p class="text-ink-200">Превью недоступно для этого типа файла.</p>
-          <a class="hidden md:inline-flex btn btn-primary" href="{{ dl_url }}">
-            {{ icon.download() }}<span>Скачать</span>
-          </a>
-          <button type="button" class="md:hidden library-blob-download btn btn-primary min-h-[48px] justify-center w-full max-w-xs">
-            {{ icon.download() }}<span>Сохранить файл</span>
-          </button>
         </div>
       {% endif %}
       {% elif not files %}
@@ -210,6 +255,180 @@
 {% endif %}
 {% endblock %}
 {% block extra_scripts %}
+<script>
+(function () {
+  var root = document.getElementById("library-upload");
+  if (!root) return;
+  var drop = document.getElementById("library-upload-drop");
+  var input = document.getElementById("library-upload-input");
+  var statusEl = document.getElementById("library-upload-status");
+  var draftEl = document.getElementById("library-upload-draft");
+  var nameEl = document.getElementById("library-upload-name");
+  var tagsEl = document.getElementById("library-upload-tags");
+  var summaryEl = document.getElementById("library-upload-summary");
+  var categoryEl = document.getElementById("library-upload-category");
+  var customFolderEl = document.getElementById("library-upload-custom-folder");
+  var confirmBtn = document.getElementById("library-upload-confirm");
+  var cancelBtn = document.getElementById("library-upload-cancel");
+  var currentDraft = null;
+
+  function setStatus(text, isError) {
+    if (!statusEl) return;
+    statusEl.hidden = !text;
+    statusEl.textContent = text || "";
+    statusEl.classList.toggle("text-rose-300", Boolean(isError));
+  }
+
+  function setBusy(isBusy) {
+    if (input) input.disabled = isBusy;
+    if (confirmBtn) confirmBtn.disabled = isBusy;
+    if (cancelBtn) cancelBtn.disabled = isBusy;
+    if (drop) drop.classList.toggle("is-busy", isBusy);
+  }
+
+  function renderDraft(draft) {
+    currentDraft = draft;
+    if (!draftEl || !categoryEl) return;
+    nameEl.textContent = draft.original_filename || "Файл";
+    tagsEl.textContent = draft.subject_tags ? "Темы: " + draft.subject_tags : "";
+    summaryEl.value = draft.summary || "";
+    summaryEl.placeholder = draft.manual_description_required
+      ? "AI-разбор не сработал. Опиши файл вручную."
+      : "Коротко опиши, что внутри файла";
+    categoryEl.innerHTML = "";
+    (draft.categories || []).forEach(function (cat) {
+      var opt = document.createElement("option");
+      opt.value = cat.slug;
+      opt.textContent = cat.label_ru || cat.slug;
+      opt.selected = cat.slug === draft.suggested_category;
+      categoryEl.appendChild(opt);
+    });
+    var customOpt = document.createElement("option");
+    customOpt.value = "__custom__";
+    customOpt.textContent = "Своя папка";
+    categoryEl.appendChild(customOpt);
+    if (customFolderEl) {
+      customFolderEl.value = "";
+      customFolderEl.hidden = true;
+    }
+    draftEl.hidden = false;
+  }
+
+  async function uploadFile(file) {
+    if (!file) return;
+    setBusy(true);
+    setStatus("Сканирую файл…", false);
+    if (draftEl) draftEl.hidden = true;
+    var fd = new FormData();
+    fd.append("file", file);
+    try {
+      var r = await fetch("/api/library/upload", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": window.closedHubCsrf || "" },
+        body: fd,
+      });
+      var data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || "Не удалось обработать файл");
+      renderDraft(data);
+      setStatus("", false);
+    } catch (e) {
+      setStatus(e.message || "Не удалось загрузить файл", true);
+    } finally {
+      setBusy(false);
+      if (input) input.value = "";
+    }
+  }
+
+  async function confirmDraft() {
+    if (!currentDraft || !currentDraft.file_id) return;
+    setBusy(true);
+    setStatus("Сохраняю файл…", false);
+    var fd = new FormData();
+    var selectedCategory = categoryEl.value || currentDraft.suggested_category || "other";
+    var customFolder = customFolderEl ? customFolderEl.value.trim() : "";
+    if (selectedCategory === "__custom__") {
+      if (!customFolder) {
+        setStatus("Напиши название новой папки.", true);
+        setBusy(false);
+        return;
+      }
+      fd.append("custom_folder", customFolder);
+    } else {
+      fd.append("slug", selectedCategory);
+    }
+    fd.append("summary", summaryEl.value || "");
+    try {
+      var r = await fetch("/api/library/upload/" + currentDraft.file_id + "/confirm", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": window.closedHubCsrf || "" },
+        body: fd,
+      });
+      var data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.detail || "Не удалось подтвердить файл");
+      var params = new URLSearchParams();
+      params.set("cat", data.category || fd.get("slug"));
+      params.set("file", data.file_id);
+      if (root.getAttribute("data-scope") === "mine") params.set("scope", "mine");
+      location.href = "/library?" + params.toString();
+    } catch (e) {
+      setStatus(e.message || "Не удалось подтвердить файл", true);
+      setBusy(false);
+    }
+  }
+
+  async function cancelDraft() {
+    if (!currentDraft || !currentDraft.file_id) {
+      if (draftEl) draftEl.hidden = true;
+      return;
+    }
+    setBusy(true);
+    try {
+      await fetch("/api/library/upload/" + currentDraft.file_id + "/cancel", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": window.closedHubCsrf || "" },
+      });
+    } finally {
+      currentDraft = null;
+      if (draftEl) draftEl.hidden = true;
+      setStatus("", false);
+      setBusy(false);
+    }
+  }
+
+  if (input) {
+    input.addEventListener("change", function () {
+      uploadFile(input.files && input.files[0]);
+    });
+  }
+  if (categoryEl && customFolderEl) {
+    categoryEl.addEventListener("change", function () {
+      customFolderEl.hidden = categoryEl.value !== "__custom__";
+      if (!customFolderEl.hidden) customFolderEl.focus();
+    });
+  }
+  if (confirmBtn) confirmBtn.addEventListener("click", confirmDraft);
+  if (cancelBtn) cancelBtn.addEventListener("click", cancelDraft);
+  if (!drop) return;
+  ["dragenter", "dragover"].forEach(function (name) {
+    drop.addEventListener(name, function (e) {
+      e.preventDefault();
+      drop.classList.add("is-dragover");
+    });
+  });
+  ["dragleave", "drop"].forEach(function (name) {
+    drop.addEventListener(name, function (e) {
+      e.preventDefault();
+      drop.classList.remove("is-dragover");
+    });
+  });
+  drop.addEventListener("drop", function (e) {
+    uploadFile(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]);
+  });
+})();
+</script>
 {% if view == 'files' and selected %}
 <script>
 (function () {

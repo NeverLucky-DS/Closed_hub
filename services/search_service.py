@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from html import escape
 from pathlib import Path
 from urllib.parse import urlencode
@@ -8,7 +9,21 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import get_settings
 
+log = logging.getLogger(__name__)
+
 MAX_SEARCH_RESULTS = 15
+
+
+async def query_vector(text: str) -> list[float] | None:
+    """Кодирует поисковый запрос в вектор. Возвращает None если API недоступна."""
+    try:
+        from services.embedding_service import embed_texts
+        vecs = await embed_texts([text], "retrieval.query")
+        if vecs:
+            return vecs[0]
+    except Exception:
+        log.debug("query embedding failed", exc_info=True)
+    return None
 
 
 def command_query(args: list[str] | tuple[str, ...] | None) -> str:
@@ -17,6 +32,15 @@ def command_query(args: list[str] | tuple[str, ...] | None) -> str:
 
 def no_query_text(command: str) -> str:
     return f"Напиши запрос после команды, например: /{command} машинное обучение"
+
+
+def resources_menu_text() -> str:
+    return (
+        "Поиск по ресурсам\n\n"
+        "Кнопка «Искать ссылки» попросит запрос следующим сообщением.\n"
+        "Командой тоже можно: /links машинное обучение\n"
+        "Общий поиск по файлам и ссылкам: /search тема"
+    )
 
 
 def links_not_ready_text() -> str:
@@ -50,6 +74,27 @@ def _site_link(label: str, url: str | None) -> str:
     if not url or not url.startswith(("http://", "https://")):
         return escape(label)
     return f'<a href="{escape(url, quote=True)}">{escape(label)}</a>'
+
+
+def resources_menu_keyboard(topics: list) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton("Искать ссылки", callback_data="res:search")],
+        [InlineKeyboardButton("Последние ссылки", callback_data="res:latest")],
+    ]
+    topic_buttons: list[InlineKeyboardButton] = []
+    for topic in topics[:10]:
+        label = str(topic["path_title"])[:32]
+        topic_buttons.append(InlineKeyboardButton(label, callback_data=f"res:topic:{int(topic['id'])}"))
+        if len(topic_buttons) == 2:
+            rows.append(topic_buttons)
+            topic_buttons = []
+    if topic_buttons:
+        rows.append(topic_buttons)
+
+    site = _site_url("/resources")
+    if site:
+        rows.append([InlineKeyboardButton("Открыть ресурсы на сайте", url=site)])
+    return InlineKeyboardMarkup(rows)
 
 
 def _grouped_file_lines(rows: list) -> list[str]:

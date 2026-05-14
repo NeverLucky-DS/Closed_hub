@@ -6,11 +6,12 @@ import time
 from pathlib import Path
 
 from telegram import InputFile, Update
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from bot.keyboards import main_menu
 from db import repo
-from services import activity, company_sync, events_service, files_service, hr_service, interview_service, interviews_store
+from services import activity, company_sync, events_service, files_service, hr_service, interview_service, interviews_store, resources_service, search_service
 from services.google_sheets_hr import append_hr_contact_row
 from utils.telegram_user import user_display_handle
 
@@ -26,6 +27,146 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not user:
         return
     data = query.data
+
+    if data.startswith("res:"):
+        if await repo.member_status(pool, user.id) != "active":
+            await query.answer("Нет доступа", show_alert=True)
+            return
+        if data == "res:search":
+            await repo.set_session(pool, user.id, "resource_search", {})
+            await query.answer()
+            await query.edit_message_text(
+                "Напиши запрос одним сообщением.\n\n"
+                "Например: машинное обучение, резюме, system design."
+            )
+            return
+        if data == "res:latest":
+            rows, available = await repo.search_resource_links(pool, "", search_service.MAX_SEARCH_RESULTS)
+            await query.answer()
+            await query.edit_message_text(
+                search_service.links_response(
+                    rows,
+                    resources_available=available,
+                    title="Последние полезные ссылки",
+                    empty_text="В полезных ссылках пока пусто.",
+                ),
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
+            return
+        if data.startswith("res:topic:"):
+            try:
+                topic_id = int(data.rsplit(":", 1)[1])
+            except ValueError:
+                await query.answer("Некорректная тема", show_alert=True)
+                return
+            topic = await repo.get_resource_topic(pool, topic_id)
+            if not topic:
+                await query.answer("Тема не найдена", show_alert=True)
+                return
+            rows = await repo.list_resource_links(pool, topic_id=topic_id, limit=search_service.MAX_SEARCH_RESULTS)
+            await query.answer()
+            await query.edit_message_text(
+                search_service.links_response(
+                    rows,
+                    resources_available=True,
+                    title=f"Ссылки: {topic['path_title']}",
+                    empty_text=f"В теме «{topic['path_title']}» пока нет ссылок.",
+                ),
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
+            return
+
+    if data == "rlcan":
+        _, session_payload = await repo.get_session(pool, user.id)
+        await repo.clear_session(pool, user.id)
+        await query.answer("Отменено")
+        try:
+            await query.edit_message_text("Добавление ссылки отменено.")
+        except Exception:
+            pass
+        return
+
+    if data == "rlok":
+        _, session_payload = await repo.get_session(pool, user.id)
+        if not session_payload or not session_payload.get("url"):
+            await query.answer("Черновик устарел — пришли ссылку снова.", show_alert=True)
+            return
+
+        url = session_payload["url"]
+        draft = session_payload.get("draft") or {}
+
+        # Проверяем дубликат
+        existing = await repo.find_resource_link_by_url(pool, url)
+        if existing:
+            await repo.clear_session(pool, user.id)
+            await query.answer("Ссылка уже есть в базе.", show_alert=True)
+            try:
+                await query.edit_message_text(
+                    f"Эта ссылка уже сохранена:\n<b>{existing['title']}</b>",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+            return
+
+        link_title = (draft.get("title") or "").strip()[:80] or resources_service.default_title_for_url(url)
+        ai_summary = (draft.get("ai_summary") or "").strip()[:400] or None
+        description = (draft.get("description_ru") or "").strip()[:2000]
+        main_topic = (draft.get("main_topic") or "").strip()
+        is_new_topic = bool(draft.get("is_new_topic", False))
+
+        # Найти или создать тему
+        topics = await repo.list_resource_topics(pool)
+        tid: int | None = None
+
+        if main_topic:
+            mt_lower = main_topic.lower()
+            for t in topics:
+                if str(t["title"]).strip().lower() == mt_lower:
+                    tid = int(t["id"])
+                    break
+            if tid is None and is_new_topic:
+                slug, ttl, topic_err = resources_service.normalize_topic_title(main_topic)
+                if not topic_err and slug and ttl:
+                    tid = await repo.ensure_resource_topic(pool, slug, ttl, user.id)
+
+        if tid is None and topics:
+            # fallback: первая тема по порядку
+            tid = int(topics[0]["id"])
+
+        if tid is None:
+            await query.answer("Не удалось определить тему. Добавь ссылку через сайт.", show_alert=True)
+            return
+
+        rid = await repo.insert_resource_link(
+            pool,
+            topic_id=tid,
+            url=url,
+            title=link_title,
+            user_note=description or "—",
+            ai_summary=ai_summary,
+            added_by=user.id,
+        )
+        # Кодируем вектор после сохранения, ошибка не мешает подтверждению
+        try:
+            from services import embedding_service
+            await embedding_service.refresh_resource_link_embedding(pool, rid)
+        except Exception:
+            pass
+        await repo.clear_session(pool, user.id)
+        await query.answer("Сохранено!")
+        try:
+            await query.edit_message_text(
+                f"✅ Ссылка сохранена в теме «{main_topic or '—'}».\n\n"
+                f"<b>{link_title}</b>\n{url}",
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            pass
+        return
 
     if data.startswith("hrx:"):
         hr_id = int(data.split(":", 1)[1])

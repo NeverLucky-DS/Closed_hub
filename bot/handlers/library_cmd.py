@@ -10,20 +10,45 @@ from db import repo
 from services import search_service
 
 
-async def files_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _active_pool_and_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not update.effective_message:
-        return
+        return None
     if update.effective_chat and update.effective_chat.type != "private":
-        return
+        return None
     pool = context.application.bot_data["pool"]
     uid = update.effective_user.id
     if await repo.member_status(pool, uid) != "active":
         await update.effective_message.reply_text("Нет доступа.")
+        return None
+    return pool, uid
+
+
+async def resources_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    data = await _active_pool_and_user(update, context)
+    if data is None or not update.effective_message:
         return
+    pool, _uid = data
+    topics = await repo.list_resource_topics_with_counts(pool)
+    await update.effective_message.reply_text(
+        search_service.resources_menu_text(),
+        reply_markup=search_service.resources_menu_keyboard(topics),
+    )
+
+
+async def files_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    data = await _active_pool_and_user(update, context)
+    if data is None or not update.effective_message:
+        return
+    pool, _uid = data
 
     query = search_service.command_query(context.args)
     if query:
-        rows = await repo.search_library_files(pool, query, search_service.MAX_SEARCH_RESULTS)
+        vec = await search_service.query_vector(query)
+        rows = []
+        if vec:
+            rows = await repo.semantic_search_library_files(pool, vec, search_service.MAX_SEARCH_RESULTS)
+        if not rows:
+            rows = await repo.search_library_files(pool, query, search_service.MAX_SEARCH_RESULTS)
         text, markup = search_service.files_response(
             rows,
             title=f"Файлы по запросу «{query}»",
@@ -63,22 +88,24 @@ async def files_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def links_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not update.effective_user or not update.effective_message:
+    data = await _active_pool_and_user(update, context)
+    if data is None or not update.effective_message:
         return
-    if update.effective_chat and update.effective_chat.type != "private":
-        return
-    pool = context.application.bot_data["pool"]
-    uid = update.effective_user.id
-    if await repo.member_status(pool, uid) != "active":
-        await update.effective_message.reply_text("Нет доступа.")
-        return
+    pool, _uid = data
 
     query = search_service.command_query(context.args)
-    rows, available = await repo.search_resource_links(pool, query, search_service.MAX_SEARCH_RESULTS)
     if query:
+        vec = await search_service.query_vector(query)
+        rows = []
+        if vec:
+            rows = await repo.semantic_search_resource_links(pool, vec, search_service.MAX_SEARCH_RESULTS)
+            available = True
+        if not rows:
+            rows, available = await repo.search_resource_links(pool, query, search_service.MAX_SEARCH_RESULTS)
         title = f"Ссылки по запросу «{query}»"
         empty = f"В полезных ссылках ничего не нашёл по запросу «{query}»."
     else:
+        rows, available = await repo.search_resource_links(pool, "", search_service.MAX_SEARCH_RESULTS)
         title = "Последние полезные ссылки"
         empty = "В полезных ссылках пока пусто."
     await update.effective_message.reply_text(
@@ -94,23 +121,27 @@ async def links_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not update.effective_user or not update.effective_message:
+    data = await _active_pool_and_user(update, context)
+    if data is None or not update.effective_message:
         return
-    if update.effective_chat and update.effective_chat.type != "private":
-        return
-    pool = context.application.bot_data["pool"]
-    uid = update.effective_user.id
-    if await repo.member_status(pool, uid) != "active":
-        await update.effective_message.reply_text("Нет доступа.")
-        return
+    pool, _uid = data
 
     query = search_service.command_query(context.args)
     if not query:
         await update.effective_message.reply_text(search_service.no_query_text("search"))
         return
 
-    file_rows = await repo.search_library_files(pool, query, 8)
-    link_rows, links_available = await repo.search_resource_links(pool, query, 7)
+    vec = await search_service.query_vector(query)
+    file_rows = []
+    link_rows = []
+    if vec:
+        file_rows = await repo.semantic_search_library_files(pool, vec, 8)
+        link_rows = await repo.semantic_search_resource_links(pool, vec, 7)
+        links_available = True
+    if not file_rows:
+        file_rows = await repo.search_library_files(pool, query, 8)
+    if not link_rows:
+        link_rows, links_available = await repo.search_resource_links(pool, query, 7)
     text, markup = search_service.combined_response(
         file_rows,
         link_rows,

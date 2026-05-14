@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS members (
     telegram_user_id BIGINT PRIMARY KEY,
     status TEXT NOT NULL CHECK (status IN ('pending', 'active', 'revoked')),
@@ -242,13 +244,20 @@ CREATE TABLE IF NOT EXISTS resource_links (
     user_note TEXT NOT NULL DEFAULT '',
     ai_summary TEXT,
     added_by BIGINT NOT NULL REFERENCES members (telegram_user_id),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    embedding vector(256),
+    embedding_model TEXT,
+    embedding_text_hash TEXT,
+    embedding_updated_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_resource_links_topic_created
     ON resource_links (topic_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_resource_links_created
     ON resource_links (created_at DESC);
+CREATE INDEX IF NOT EXISTS resource_links_embedding_hnsw_idx
+    ON resource_links USING hnsw (embedding vector_cosine_ops)
+    WHERE embedding IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
     id INT PRIMARY KEY,
@@ -270,12 +279,20 @@ CREATE TABLE IF NOT EXISTS files (
     uploader_handle TEXT,
     confirmed_at TIMESTAMPTZ,
     uploaded_by BIGINT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    embedding vector(256),
+    embedding_model TEXT,
+    embedding_text_hash TEXT,
+    embedding_updated_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_sha256_active
     ON files (sha256)
     WHERE status NOT IN ('deleted', 'cancelled');
+
+CREATE INDEX IF NOT EXISTS files_embedding_hnsw_idx
+    ON files USING hnsw (embedding vector_cosine_ops)
+    WHERE embedding IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS company_files (
     id BIGSERIAL PRIMARY KEY,

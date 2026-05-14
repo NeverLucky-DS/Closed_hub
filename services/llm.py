@@ -111,7 +111,7 @@ async def classify_intent(pool, user_text: str) -> tuple[str, float]:
     data = json.loads(raw)
     intent = str(data.get("intent", "other"))
     conf = float(data.get("confidence", 0))
-    if intent not in ("event", "hr_contact", "file_material", "other"):
+    if intent not in ("event", "hr_contact", "file_material", "resource_link", "other"):
         intent = "other"
     return intent, conf
 
@@ -284,6 +284,28 @@ async def analyze_profile(pool, resume_text: str, github_block: str) -> dict:
     raw, _, _ = await mistral_chat(
         pool,
         purpose="profile_analysis",
+        model=settings.mistral_model_default,
+        system="Reply with JSON only.",
+        user=user_block,
+        json_mode=True,
+        prefer_site_key=True,
+    )
+    return json.loads(raw)
+
+
+async def enrich_resource_link(pool, url: str, page_text: str, topic_names: list[str]) -> dict:
+    """Разметка ссылки через Mistral. Возвращает title, main_topic, ai_summary и т.д."""
+    settings = get_settings()
+    template = _load_prompt("resource_link_extract.txt")
+    topics_block = "\n".join(f"- {t}" for t in topic_names) if topic_names else "(нет тем — предложи новую)"
+    user_block = (
+        template.replace("{url}", url)
+        .replace("{topics_block}", topics_block)
+        .replace("{page_text}", page_text[:12000])
+    )
+    raw, _, _ = await mistral_chat(
+        pool,
+        purpose="resource_link_enrich",
         model=settings.mistral_model_default,
         system="Reply with JSON only.",
         user=user_block,

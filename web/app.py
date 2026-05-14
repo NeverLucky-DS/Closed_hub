@@ -32,8 +32,9 @@ from db.pool import close_pool, create_pool
 from db.schema_patch import apply_pending_patches
 from services.file_storage import company_root, library_root, profile_root
 from services.telegram_http import telegram_api_post
-from services import interviews_store, profile_analysis, resources_service
+from services import files_service, interviews_store, profile_analysis, resources_service
 from utils.company_slug import slugify_company_name
+from utils.text_slug import slugify_folder
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ _icons_dir = Path(__file__).resolve().parent.parent / "icons"
 _site_font_dir = Path(__file__).resolve().parent.parent / "VCROSDMonoRUSbyD"
 _NAV_ICON_NAMES = {
     "files": "файлы",
+    "resources": "ресурсы",
     "feed": "новости",
     "today": "выжимка",
     "hackathons": "хакатоны",
@@ -1032,6 +1034,81 @@ async def api_delete_library_file(
     return JSONResponse({"ok": True})
 
 
+@app.post("/api/library/upload")
+async def api_library_upload(
+    file: UploadFile = File(...),
+    uid: int = Depends(require_uid_api),
+    pool=Depends(pool_dep),
+    _csrf: None = Depends(require_csrf_header),
+):
+    data = await file.read()
+    draft = await files_service.prepare_file_upload(
+        pool,
+        user_id=uid,
+        data=data,
+        mime_type=file.content_type,
+        file_name=file.filename,
+    )
+    status = 200 if draft.get("ok") else 400
+    return JSONResponse(draft, status_code=status)
+
+
+@app.post("/api/library/upload/{file_id}/confirm")
+async def api_library_upload_confirm(
+    file_id: int,
+    slug: str = Form(""),
+    custom_folder: str = Form(""),
+    summary: str = Form(""),
+    uid: int = Depends(require_uid_api),
+    pool=Depends(pool_dep),
+    _csrf: None = Depends(require_csrf_header),
+):
+    frow = await repo.get_file_record(pool, file_id)
+    if not frow or int(frow["uploaded_by"]) != uid or str(frow["status"]) != "awaiting_confirm":
+        raise HTTPException(status_code=404, detail="Черновик не найден")
+
+    custom_label = (custom_folder or "").strip()
+    manual_summary = (summary or "").strip()
+    if not manual_summary and not (frow.get("summary") or ""):
+        raise HTTPException(status_code=400, detail="Добавь короткое описание файла")
+
+    cats = await repo.list_file_categories(pool)
+    known = {str(c["slug"]): str(c["label_ru"]) for c in cats}
+    if custom_label:
+        chosen_slug = slugify_folder(custom_label)
+        label = custom_label[:120]
+    else:
+        chosen_slug = (slug or frow.get("suggested_category") or "other").strip() or "other"
+        label = known.get(chosen_slug, chosen_slug)
+    if manual_summary:
+        await repo.update_file_record(pool, file_id, summary=manual_summary)
+    ok = await files_service.finalize_file_to_library(
+        pool,
+        file_id=file_id,
+        user_id=uid,
+        slug=chosen_slug,
+        label_ru=label,
+    )
+    if not ok:
+        raise HTTPException(status_code=400, detail="Не удалось подтвердить файл")
+    return JSONResponse({"ok": True, "file_id": file_id, "category": chosen_slug})
+
+
+@app.post("/api/library/upload/{file_id}/cancel")
+async def api_library_upload_cancel(
+    file_id: int,
+    uid: int = Depends(require_uid_api),
+    pool=Depends(pool_dep),
+    _csrf: None = Depends(require_csrf_header),
+):
+    frow = await repo.get_file_record(pool, file_id)
+    if not frow or int(frow["uploaded_by"]) != uid or str(frow["status"]) != "awaiting_confirm":
+        raise HTTPException(status_code=404, detail="Черновик не найден")
+    await repo.update_file_record(pool, file_id, status="cancelled")
+    _unlink_library_file_if_safe(str(frow["storage_path"]))
+    return JSONResponse({"ok": True})
+
+
 @app.delete("/api/events/{event_id}")
 async def api_hide_event(
     event_id: int,
@@ -1085,6 +1162,8 @@ async def page_library(
     request: Request,
     cat: str | None = None,
     file: int | None = None,
+    q: str = "",
+    scope: str = "all",
     pool=Depends(pool_dep),
 ):
     uid = session_uid(request)
@@ -1094,7 +1173,43 @@ async def page_library(
         request.session.clear()
         return RedirectResponse("/login", status_code=302)
 
-    cats = await repo.list_categories_with_counts(pool)
+    scope = "mine" if scope == "mine" else "all"
+    scope_uid = uid if scope == "mine" else None
+    cats = await repo.list_categories_with_counts(pool, uploaded_by=scope_uid)
+    query = (q or "").strip()
+
+    # Поиск по всем файлам (без конкретной папки)
+    if query and not cat:
+        try:
+            from services import search_service as ss
+            vec = await ss.query_vector(query)
+            search_files = []
+            if vec:
+                search_files = await repo.semantic_search_library_files(
+                    pool, vec, limit=50, uploaded_by=scope_uid
+                )
+            if not search_files:
+                search_files = await repo.search_library_files(
+                    pool, query, limit=50, uploaded_by=scope_uid
+                )
+        except Exception:
+            search_files = await repo.search_library_files(pool, query, limit=50, uploaded_by=scope_uid)
+        return _templates.TemplateResponse(
+            request,
+            "library.html",
+            {
+                "title": "Поиск файлов",
+                "nav": "library",
+                "uid": uid,
+                "view": "search",
+                "categories": cats,
+                "search_files": search_files,
+                "q": query,
+                "scope": scope,
+                "is_admin": is_web_admin(uid),
+            },
+            headers=_no_store_headers(),
+        )
 
     if not cat:
         if file is not None:
@@ -1104,8 +1219,9 @@ async def page_library(
                 and str(frow.get("status") or "") == "confirmed"
                 and frow.get("confirmed_category")
             ):
+                suffix = "&scope=mine" if scope == "mine" else ""
                 return RedirectResponse(
-                    f"/library?cat={frow['confirmed_category']}&file={int(file)}",
+                    f"/library?cat={frow['confirmed_category']}&file={int(file)}{suffix}",
                     status_code=302,
                 )
         return _templates.TemplateResponse(
@@ -1117,13 +1233,15 @@ async def page_library(
                 "uid": uid,
                 "view": "folders",
                 "categories": cats,
+                "q": query,
+                "scope": scope,
                 "is_admin": is_web_admin(uid),
             },
             headers=_no_store_headers(),
         )
 
     cat_label = next((c["label_ru"] for c in cats if c["slug"] == cat), cat)
-    files = await repo.list_library_files(pool, limit=500, category_slug=cat)
+    files = await repo.list_library_files(pool, limit=500, category_slug=cat, uploaded_by=scope_uid)
     selected = None
     if file is not None:
         selected = next((f for f in files if int(f["id"]) == int(file)), None)
@@ -1142,6 +1260,8 @@ async def page_library(
             "categories": cats,
             "files": files,
             "selected": selected,
+            "q": query,
+            "scope": scope,
             "is_admin": is_web_admin(uid),
             "companies_for_attach": companies_attach,
             "attach_err": attach_err,
@@ -1157,6 +1277,7 @@ async def library_attach_company(
     cat: str = Form(""),
     file_id: str = Form(""),
     company_id: str = Form(""),
+    scope: str = Form("all"),
     _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
@@ -1169,17 +1290,19 @@ async def library_attach_company(
         fid = int((file_id or "").strip())
         cid = int((company_id or "").strip())
     except ValueError:
-        q = f"cat={cat}&file={file_id}&attach_err=bad_params" if cat else "attach_err=bad_params"
+        scope_q = "&scope=mine" if scope == "mine" else ""
+        q = f"cat={cat}&file={file_id}{scope_q}&attach_err=bad_params" if cat else "attach_err=bad_params"
         return RedirectResponse(f"/library?{q}", status_code=303)
     frow = await repo.get_file_record(pool, fid)
+    scope_q = "&scope=mine" if scope == "mine" else ""
     if not frow:
         return RedirectResponse(
-            f"/library?cat={cat}&file={fid}&attach_err=not_file",
+            f"/library?cat={cat}&file={fid}{scope_q}&attach_err=not_file",
             status_code=303,
         )
     if int(frow["uploaded_by"]) != uid and not is_web_admin(uid):
         return RedirectResponse(
-            f"/library?cat={cat}&file={fid}&attach_err=forbidden",
+            f"/library?cat={cat}&file={fid}{scope_q}&attach_err=forbidden",
             status_code=303,
         )
     res = await repo.link_company_file(pool, cid, fid, uid, None)
@@ -1190,7 +1313,7 @@ async def library_attach_company(
         "ok": "",
     }
     suf = err_map.get(res, "fail")
-    redir = f"/library?cat={cat}&file={fid}" if cat else "/library"
+    redir = f"/library?cat={cat}&file={fid}{scope_q}" if cat else "/library"
     if suf:
         redir += f"&attach_err={suf}"
     return RedirectResponse(redir, status_code=303)
@@ -1219,7 +1342,24 @@ async def page_resources(
             return RedirectResponse("/resources?err=Тема+не+найдена", status_code=303)
 
     query = (q or "").strip()
-    links = await repo.list_resource_links(pool, topic_id=topic, query=query, limit=300)
+
+    # Семантический поиск если есть текстовый запрос без конкретной темы
+    if query and topic is None:
+        try:
+            from services import search_service as ss
+            vec = await ss.query_vector(query)
+            links = []
+            if vec:
+                links = await repo.semantic_search_resource_links(pool, vec, limit=50)
+            if not links:
+                links = await repo.list_resource_links(pool, topic_id=None, query=query, limit=300)
+        except Exception:
+            links = await repo.list_resource_links(pool, topic_id=None, query=query, limit=300)
+    else:
+        links = await repo.list_resource_links(pool, topic_id=topic, query=query, limit=300)
+
+    # 10 последних для главного экрана (папки + Недавние)
+    recent_links = await repo.list_resource_links(pool, limit=10) if topic is None and not query else []
     return _templates.TemplateResponse(
         request,
         "resources.html",
@@ -1231,9 +1371,14 @@ async def page_resources(
             "all_topics": all_topics,
             "selected_topic": selected,
             "links": links,
+            "recent_links": recent_links,
             "q": query,
             "err": request.query_params.get("err"),
             "created": request.query_params.get("created"),
+            "draft": None,
+            "draft_url": "",
+            "draft_preselect_topic_id": None,
+            "draft_preselect_new_topic": "",
         },
         headers=_no_store_headers(),
     )
@@ -1247,6 +1392,9 @@ async def resources_add_link(
     topic_id: str = Form(""),
     new_topic: str = Form(""),
     user_note: str = Form(""),
+    step: str = Form(""),
+    draft_title: str = Form(""),
+    draft_ai_summary: str = Form(""),
     _csrf: None = Depends(require_csrf_form),
 ):
     uid = session_uid(request)
@@ -1259,43 +1407,110 @@ async def resources_add_link(
     norm_url, err = resources_service.normalize_url(url)
     if err:
         return RedirectResponse(f"/resources?err={quote_plus(err)}", status_code=303)
+    assert norm_url is not None
 
-    note = resources_service.normalize_note(user_note)
-    if len(note) < 3:
+    # Шаг 2: пользователь уже видел черновик и нажал «Сохранить»
+    if step == "confirm":
+        # Проверяем дубликат перед сохранением
+        existing = await repo.find_resource_link_by_url(pool, norm_url)
+        if existing:
+            return RedirectResponse(
+                f"/resources?err={quote_plus('Ссылка уже есть: ' + str(existing['title']))}",
+                status_code=303,
+            )
+
+        note = resources_service.normalize_note(user_note)
+        if len(note) < 3:
+            return RedirectResponse(
+                "/resources?err=Добавь+короткое+описание+пользы+ссылки",
+                status_code=303,
+            )
+
+        link_title = (draft_title or "").strip()[:200] or resources_service.default_title_for_url(norm_url)
+        ai_sum = (draft_ai_summary or "").strip()[:400] or None
+
+        topic_title = (new_topic or "").strip()
+        if topic_title:
+            slug, ttl, topic_err = resources_service.normalize_topic_title(topic_title)
+            if topic_err or not slug or not ttl:
+                return RedirectResponse(
+                    f"/resources?err={quote_plus(topic_err or 'Некорректная тема')}",
+                    status_code=303,
+                )
+            tid = await repo.ensure_resource_topic(pool, slug, ttl, uid)
+        else:
+            try:
+                tid = int((topic_id or "").strip())
+            except ValueError:
+                return RedirectResponse("/resources?err=Выбери+тему", status_code=303)
+            if not await repo.get_resource_topic(pool, tid):
+                return RedirectResponse("/resources?err=Тема+не+найдена", status_code=303)
+
+        rid = await repo.insert_resource_link(
+            pool,
+            topic_id=tid,
+            url=norm_url,
+            title=link_title,
+            user_note=note,
+            ai_summary=ai_sum,
+            added_by=uid,
+        )
+        # Кодируем вектор после сохранения, ошибка не мешает редиректу
+        try:
+            from services import embedding_service
+            await embedding_service.refresh_resource_link_embedding(pool, rid)
+        except Exception:
+            pass
+        return RedirectResponse(f"/resources?topic={tid}&created={rid}", status_code=303)
+
+    # Шаг 1: проверяем дубликат до запроса к Jina
+    existing = await repo.find_resource_link_by_url(pool, norm_url)
+    if existing:
         return RedirectResponse(
-            "/resources?err=Добавь+короткое+описание+пользы+ссылки",
+            f"/resources?err={quote_plus('Ссылка уже есть: ' + str(existing['title']))}",
             status_code=303,
         )
 
-    topic_title = (new_topic or "").strip()
-    if topic_title:
-        slug, title, topic_err = resources_service.normalize_topic_title(topic_title)
-        if topic_err or not slug or not title:
-            return RedirectResponse(
-                f"/resources?err={quote_plus(topic_err or 'Некорректная тема')}",
-                status_code=303,
-            )
-        tid = await repo.ensure_resource_topic(pool, slug, title, uid)
-    else:
-        try:
-            tid = int((topic_id or "").strip())
-        except ValueError:
-            return RedirectResponse("/resources?err=Выбери+тему", status_code=303)
-        if not await repo.get_resource_topic(pool, tid):
-            return RedirectResponse("/resources?err=Тема+не+найдена", status_code=303)
+    # Строим AI-черновик и показываем форму подтверждения
+    draft = await resources_service.fetch_and_enrich_link(pool, norm_url)
 
-    assert norm_url is not None
-    title = resources_service.default_title_for_url(norm_url)
-    rid = await repo.insert_resource_link(
-        pool,
-        topic_id=tid,
-        url=norm_url,
-        title=title,
-        user_note=note,
-        ai_summary=None,
-        added_by=uid,
+    topics = await repo.list_resource_topics_with_counts(pool)
+    all_topics = await repo.list_resource_topics(pool)
+
+    # Если AI предложил тему — попробуем найти её в существующих
+    preselect_topic_id = None
+    preselect_new_topic = ""
+    if draft.get("main_topic"):
+        mt = draft["main_topic"].strip().lower()
+        for t in all_topics:
+            if str(t["title"]).strip().lower() == mt:
+                preselect_topic_id = t["id"]
+                break
+        if preselect_topic_id is None and draft.get("is_new_topic"):
+            preselect_new_topic = draft["main_topic"]
+
+    return _templates.TemplateResponse(
+        request,
+        "resources.html",
+        {
+            "title": "Ресурсы",
+            "nav": "resources",
+            "uid": uid,
+            "topics": topics,
+            "all_topics": all_topics,
+            "selected_topic": None,
+            "links": [],
+            "recent_links": [],
+            "q": "",
+            "err": None,
+            "created": None,
+            "draft": draft,
+            "draft_url": norm_url,
+            "draft_preselect_topic_id": preselect_topic_id,
+            "draft_preselect_new_topic": preselect_new_topic,
+        },
+        headers=_no_store_headers(),
     )
-    return RedirectResponse(f"/resources?topic={tid}&created={rid}", status_code=303)
 
 
 @app.get("/feed", response_class=HTMLResponse)

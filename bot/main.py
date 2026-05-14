@@ -4,7 +4,7 @@ from telegram.error import Conflict
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from bot.handlers.callbacks import on_callback
-from bot.handlers.library_cmd import files_command, links_command, search_command
+from bot.handlers.library_cmd import files_command, links_command, resources_command, search_command
 from bot.handlers.messages import on_text_and_media
 from bot.handlers.start import help_cmd, start_cmd
 from bot.handlers.voice import on_voice
@@ -66,6 +66,7 @@ def main() -> None:
     app.add_handler(CommandHandler("search", search_command, filters=private))
     app.add_handler(CommandHandler("files", files_command, filters=private))
     app.add_handler(CommandHandler("links", links_command, filters=private))
+    app.add_handler(CommandHandler("resources", resources_command, filters=private))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.VOICE, on_voice))
     app.add_handler(

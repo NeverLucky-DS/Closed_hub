@@ -1,0 +1,14 @@
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+      args:
+        BASE_IMAGE: closed_hub-bot:latest
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+      args:
+        BASE_IMAGE: closed_hub-web:latest

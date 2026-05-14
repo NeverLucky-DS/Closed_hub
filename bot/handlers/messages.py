@@ -18,7 +18,7 @@ from bot.keyboards import (
     main_menu,
 )
 from db import repo
-from services import company_sync, events_service, files_service, hr_service, interview_service, llm, ml_forward_service, routing
+from services import company_sync, events_service, files_service, hr_service, interview_service, llm, ml_forward_service, resources_service, routing, search_service
 from services import interviews_store
 from utils.telegram_user import user_display_handle
 from utils.text_slug import slugify_folder
@@ -60,7 +60,7 @@ async def _help_reply(message: Message, is_whitelist: bool) -> None:
         "Список последних файлов: /files, поиск по библиотеке: /files тема.\n\n"
         "— Поиск\n"
         "Ищи материалы в личке бота: /search тема. Только файлы: /files тема. "
-        "Полезные ссылки, когда подключена таблица resources: /links тема.\n\n"
+        "Полезные ссылки: /resources с кнопками или /links тема.\n\n"
         "— Голосовые\n"
         "Распознаю речь и обработаю как обычный текст.\n\n"
         "— Собесы\n"
@@ -73,6 +73,51 @@ async def _help_reply(message: Message, is_whitelist: bool) -> None:
             f"«{N.BTN_CANCEL_INVITE}» — выйти без приглашения."
         )
     await message.reply_text(text, reply_markup=main_menu(is_whitelist))
+
+
+def _resource_link_draft_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Сохранить", callback_data="rlok"),
+            InlineKeyboardButton("Отменить", callback_data="rlcan"),
+        ]
+    ])
+
+
+async def _send_resource_draft(
+    msg: Message,
+    context: ContextTypes.DEFAULT_TYPE,
+    pool,
+    uid: int,
+    url: str,
+    draft: dict,
+) -> None:
+    """Сохраняет черновик в сессии и показывает пользователю для подтверждения."""
+    await repo.set_session(pool, uid, "resource_link_confirm", {"url": url, "draft": draft})
+
+    title = draft.get("title") or url
+    topic = draft.get("main_topic") or "не определена"
+    desc = draft.get("description_ru") or ""
+    enriched = draft.get("enriched", False)
+
+    lines = [
+        f"<b>{title}</b>",
+        f"<a href='{url}'>{url[:80]}{'…' if len(url) > 80 else ''}</a>",
+        "",
+        f"Тема: {topic}",
+    ]
+    if desc:
+        lines.append(f"\n{desc}")
+    if not enriched:
+        lines.append("\nАвтозаполнение недоступно — тему и описание можно уточнить на сайте.")
+    lines.append("\nСохранить ссылку?")
+
+    await msg.reply_text(
+        "\n".join(lines),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=_resource_link_draft_keyboard(),
+    )
 
 
 async def _route_after_inbound(
@@ -231,6 +276,38 @@ async def _route_after_inbound(
         await msg.reply_text("Пришли файл вложением (например PDF).")
         return
 
+    if intent == "resource_link":
+        url = routing.extract_url(user_text or "")
+        if not url:
+            await msg.reply_text("Не нашёл ссылку. Пришли URL вида https://example.com")
+            return
+        norm_url, url_err = resources_service.normalize_url(url)
+        if url_err or not norm_url:
+            await msg.reply_text(f"Некорректная ссылка: {url_err}")
+            return
+        existing = await repo.find_resource_link_by_url(pool, norm_url)
+        if existing:
+            await msg.reply_text(f"Эта ссылка уже есть в базе:\n<b>{existing['title']}</b>", parse_mode="HTML")
+            return
+        await msg.reply_text("Читаю страницу, это займёт ~15 секунд…")
+        draft = await resources_service.fetch_and_enrich_link(pool, norm_url)
+        await _send_resource_draft(msg, context, pool, uid, norm_url, draft)
+        return
+
+    # Для неизвестных сообщений — проверяем, нет ли URL, и предлагаем добавить ссылку
+    bare_url = routing.extract_url(user_text or "")
+    if bare_url:
+        norm_url, url_err = resources_service.normalize_url(bare_url)
+        if not url_err and norm_url:
+            existing = await repo.find_resource_link_by_url(pool, norm_url)
+            if existing:
+                await msg.reply_text(f"Эта ссылка уже есть в базе:\n<b>{existing['title']}</b>", parse_mode="HTML")
+                return
+            await msg.reply_text("Читаю страницу, это займёт ~15 секунд…")
+            draft = await resources_service.fetch_and_enrich_link(pool, norm_url)
+            await _send_resource_draft(msg, context, pool, uid, norm_url, draft)
+            return
+
     await msg.reply_text(
         f"Не разобрался в задаче. Нажми «{N.BTN_GUIDE}» или опиши: мероприятие, HR (@ник и контекст), либо прикрепи файл."
     )
@@ -250,7 +327,7 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     state, payload = await repo.get_session(pool, uid)
 
     if text_raw in N.GUIDE_ALIASES:
-        if state in ("awaiting_invite", "interview_hub", "interview_tell", "interview_confirm"):
+        if state in ("awaiting_invite", "interview_hub", "interview_tell", "interview_confirm", "resource_search", "resource_link_confirm"):
             await repo.clear_session(pool, uid)
         await _help_reply(msg, wl)
         return
@@ -378,6 +455,35 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
+    if state == "resource_search":
+        if text_raw in N.CANCEL_FLOW_ALIASES or text_raw in N.BACK_HOME_ALIASES:
+            await repo.clear_session(pool, uid)
+            await msg.reply_text("Ок, поиск ресурсов отменён.", reply_markup=main_menu(wl))
+            return
+        if not text_raw or msg.document:
+            await msg.reply_text("Пришли поисковый запрос текстом или нажми «Назад».")
+            return
+        vec = await search_service.query_vector(text_raw)
+        rows = []
+        if vec:
+            rows = await repo.semantic_search_resource_links(pool, vec, search_service.MAX_SEARCH_RESULTS)
+            available = True
+        if not rows:
+            rows, available = await repo.search_resource_links(pool, text_raw, search_service.MAX_SEARCH_RESULTS)
+        await repo.clear_session(pool, uid)
+        await msg.reply_text(
+            search_service.links_response(
+                rows,
+                resources_available=available,
+                title=f"Ссылки по запросу «{text_raw[:80]}»",
+                empty_text=f"В полезных ссылках ничего не нашёл по запросу «{text_raw[:80]}».",
+            ),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=main_menu(wl),
+        )
+        return
+
     if await ml_forward_service.user_context_allows_hub_forward(pool, uid, state):
         if await ml_forward_service.try_handle_forward(msg, context, pool, uid):
             log.info(
@@ -471,6 +577,12 @@ async def on_text_and_media(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await msg.reply_text(
             "Сначала нажми «Подтвердить» или «Править текст» под сообщением с проверкой.",
             reply_markup=interview_confirm_keyboard(),
+        )
+        return
+
+    if state == "resource_link_confirm":
+        await msg.reply_text(
+            "Нажми «✅ Сохранить» или «❌ Отменить» под черновиком ссылки выше."
         )
         return
 

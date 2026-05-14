@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # Легаси: категории теперь в БД (file_categories); строка ниже не используется для кнопок.
     file_categories: str = "course,contest,notes,other"
 
+    # Jina Reader (https://jina.ai) — для извлечения текста страниц при добавлении ссылок.
+    jina_api_key: Optional[str] = None
+
     groq_api_key: Optional[str] = None
 
     google_sheet_id: Optional[str] = None

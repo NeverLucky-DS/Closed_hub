@@ -1,0 +1,6 @@
+ARG BASE_IMAGE=closed_hub-web:latest
+FROM ${BASE_IMAGE}
+
+WORKDIR /app
+
+COPY . .

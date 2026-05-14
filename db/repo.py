@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 import asyncpg
-from asyncpg.exceptions import CheckViolationError, UniqueViolationError
+from asyncpg.exceptions import CheckViolationError, UndefinedTableError, UniqueViolationError
 
 _UNSET = object()
 
@@ -348,7 +348,10 @@ async def list_file_categories(pool: asyncpg.Pool) -> list[asyncpg.Record]:
         return list(rows)
 
 
-async def list_categories_with_counts(pool: asyncpg.Pool) -> list[asyncpg.Record]:
+async def list_categories_with_counts(
+    pool: asyncpg.Pool,
+    uploaded_by: int | None = None,
+) -> list[asyncpg.Record]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
@@ -359,9 +362,11 @@ async def list_categories_with_counts(pool: asyncpg.Pool) -> list[asyncpg.Record
                 MAX(f.created_at) FILTER (WHERE f.status = 'confirmed') AS last_added
             FROM file_categories c
             LEFT JOIN files f ON f.confirmed_category = c.slug
+                AND ($1::bigint IS NULL OR f.uploaded_by = $1)
             GROUP BY c.slug, c.label_ru
             ORDER BY files_count DESC, c.label_ru ASC
             """,
+            uploaded_by,
         )
         return list(rows)
 
@@ -501,65 +506,62 @@ async def list_library_files(
     pool: asyncpg.Pool,
     limit: int = 40,
     category_slug: str | None = None,
+    uploaded_by: int | None = None,
 ) -> list[asyncpg.Record]:
     async with pool.acquire() as conn:
-        if category_slug:
-            rows = await conn.fetch(
-                """
-                SELECT id, storage_path, sha256, mime_type, summary, confirmed_category,
-                       original_filename, uploaded_by, uploader_handle, created_at, confirmed_at, status
-                FROM files
-                WHERE status = 'confirmed' AND confirmed_category = $2
-                ORDER BY created_at DESC
-                LIMIT $1
-                """,
-                limit,
-                category_slug,
-            )
-        else:
-            rows = await conn.fetch(
-                """
-                SELECT id, storage_path, sha256, mime_type, summary, confirmed_category,
-                       original_filename, uploaded_by, uploader_handle, created_at, confirmed_at, status
-                FROM files
-                WHERE status = 'confirmed'
-                ORDER BY created_at DESC
-                LIMIT $1
-                """,
-                limit,
-            )
+        rows = await conn.fetch(
+            """
+            SELECT id, storage_path, sha256, mime_type, summary, confirmed_category,
+                   original_filename, uploaded_by, uploader_handle, created_at, confirmed_at, status
+            FROM files
+            WHERE status = 'confirmed'
+              AND ($2::text IS NULL OR confirmed_category = $2)
+              AND ($3::bigint IS NULL OR uploaded_by = $3)
+            ORDER BY created_at DESC
+            LIMIT $1
+            """,
+            limit,
+            category_slug,
+            uploaded_by,
+        )
         return list(rows)
 
 
 async def list_resource_topics(pool: asyncpg.Pool) -> list[asyncpg.Record]:
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT t.id, t.slug, t.title, t.parent_id,
-                   CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS path_title
-            FROM resource_topics t
-            LEFT JOIN resource_topics p ON p.id = t.parent_id
-            ORDER BY path_title ASC
-            """,
-        )
+        try:
+            rows = await conn.fetch(
+                """
+                SELECT t.id, t.slug, t.title, t.parent_id,
+                       CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS path_title
+                FROM resource_topics t
+                LEFT JOIN resource_topics p ON p.id = t.parent_id
+                ORDER BY path_title ASC
+                """,
+            )
+        except UndefinedTableError:
+            return []
         return list(rows)
 
 
 async def list_resource_topics_with_counts(pool: asyncpg.Pool) -> list[asyncpg.Record]:
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT t.id, t.slug, t.title, t.parent_id,
-                   CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS path_title,
-                   COUNT(l.id)::int AS links_count,
-                   MAX(l.created_at) AS last_added
-            FROM resource_topics t
-            LEFT JOIN resource_topics p ON p.id = t.parent_id
-            LEFT JOIN resource_links l ON l.topic_id = t.id
-            GROUP BY t.id, p.id, p.title
-            ORDER BY links_count DESC, path_title ASC
-            """,
-        )
+        try:
+            rows = await conn.fetch(
+                """
+                SELECT t.id, t.slug, t.title, t.parent_id,
+                       CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS path_title,
+                       COUNT(l.id)::int AS links_count,
+                       MAX(l.created_at) AS last_added
+                FROM resource_topics t
+                LEFT JOIN resource_topics p ON p.id = t.parent_id
+                LEFT JOIN resource_links l ON l.topic_id = t.id
+                GROUP BY t.id, p.id, p.title
+                ORDER BY links_count DESC, path_title ASC
+                """,
+            )
+        except UndefinedTableError:
+            return []
         return list(rows)
 
 
@@ -602,6 +604,167 @@ async def ensure_resource_topic(
         return int(row["id"])
 
 
+async def get_resource_link_with_topic(pool: asyncpg.Pool, link_id: int) -> asyncpg.Record | None:
+    """Возвращает ссылку с полями темы и embedding_text_hash для embedding-сервиса."""
+    async with pool.acquire() as conn:
+        try:
+            return await conn.fetchrow(
+                """
+                SELECT l.id, l.title, l.url, l.user_note, l.ai_summary,
+                       l.embedding_text_hash,
+                       CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS topic_path
+                FROM resource_links l
+                INNER JOIN resource_topics t ON t.id = l.topic_id
+                LEFT JOIN resource_topics p ON p.id = t.parent_id
+                WHERE l.id = $1
+                """,
+                link_id,
+            )
+        except UndefinedTableError:
+            return None
+
+
+async def update_resource_link_embedding(
+    pool: asyncpg.Pool,
+    link_id: int,
+    vec: list[float],
+    text_hash: str,
+) -> None:
+    """Сохраняет вектор для ссылки."""
+    from services.embedding_service import EMBEDDING_MODEL, vector_literal
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE resource_links
+            SET embedding = $2::vector,
+                embedding_model = $3,
+                embedding_text_hash = $4,
+                embedding_updated_at = now()
+            WHERE id = $1
+            """,
+            link_id,
+            vector_literal(vec),
+            EMBEDDING_MODEL,
+            text_hash,
+        )
+
+
+async def update_file_embedding(
+    pool: asyncpg.Pool,
+    file_id: int,
+    vec: list[float],
+    text_hash: str,
+) -> None:
+    """Сохраняет вектор для файла."""
+    from services.embedding_service import EMBEDDING_MODEL, vector_literal
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE files
+            SET embedding = $2::vector,
+                embedding_model = $3,
+                embedding_text_hash = $4,
+                embedding_updated_at = now()
+            WHERE id = $1
+            """,
+            file_id,
+            vector_literal(vec),
+            EMBEDDING_MODEL,
+            text_hash,
+        )
+
+
+async def semantic_search_resource_links(
+    pool: asyncpg.Pool,
+    query_vector: list[float],
+    limit: int = 15,
+    max_distance: float = 0.65,
+) -> list[asyncpg.Record]:
+    """
+    Семантический поиск ссылок по cosine distance.
+    max_distance=0.65 → similarity >= 0.35: отсекаем нерелевантные результаты.
+    """
+    from services.embedding_service import vector_literal
+
+    async with pool.acquire() as conn:
+        try:
+            return list(
+                await conn.fetch(
+                    """
+                    SELECT l.id, l.url, l.title, l.user_note,
+                           COALESCE(l.ai_summary, '') AS summary,
+                           CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS topic,
+                           l.created_at,
+                           1 - (l.embedding <=> $1::vector) AS score
+                    FROM resource_links l
+                    INNER JOIN resource_topics t ON t.id = l.topic_id
+                    LEFT JOIN resource_topics p ON p.id = t.parent_id
+                    WHERE l.embedding IS NOT NULL
+                      AND (l.embedding <=> $1::vector) <= $3
+                    ORDER BY l.embedding <=> $1::vector
+                    LIMIT $2
+                    """,
+                    vector_literal(query_vector),
+                    limit,
+                    max_distance,
+                )
+            )
+        except Exception:
+            return []
+
+
+async def semantic_search_library_files(
+    pool: asyncpg.Pool,
+    query_vector: list[float],
+    limit: int = 15,
+    max_distance: float = 0.65,
+    uploaded_by: int | None = None,
+) -> list[asyncpg.Record]:
+    """
+    Семантический поиск файлов по cosine distance.
+    max_distance=0.65 → similarity >= 0.35: отсекаем нерелевантные результаты.
+    """
+    from services.embedding_service import vector_literal
+
+    async with pool.acquire() as conn:
+        try:
+            return list(
+                await conn.fetch(
+                    """
+                    SELECT f.id, f.storage_path, f.sha256, f.mime_type, f.summary,
+                           f.confirmed_category, f.original_filename, f.subject_tags,
+                           f.uploaded_by, f.uploader_handle, f.created_at, f.confirmed_at,
+                           COALESCE(c.label_ru, f.confirmed_category) AS category_label,
+                           1 - (f.embedding <=> $1::vector) AS score
+                    FROM files f
+                    LEFT JOIN file_categories c ON c.slug = f.confirmed_category
+                    WHERE f.status = 'confirmed' AND f.embedding IS NOT NULL
+                      AND (f.embedding <=> $1::vector) <= $3
+                      AND ($4::bigint IS NULL OR f.uploaded_by = $4)
+                    ORDER BY f.embedding <=> $1::vector
+                    LIMIT $2
+                    """,
+                    vector_literal(query_vector),
+                    limit,
+                    max_distance,
+                    uploaded_by,
+                )
+            )
+        except Exception:
+            return []
+
+
+async def find_resource_link_by_url(pool: asyncpg.Pool, url: str) -> asyncpg.Record | None:
+    """Ищет существующую ссылку с таким же URL (точное совпадение)."""
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            "SELECT id, title FROM resource_links WHERE url = $1 LIMIT 1",
+            url,
+        )
+
+
 async def insert_resource_link(
     pool: asyncpg.Pool,
     topic_id: int,
@@ -637,35 +800,40 @@ async def list_resource_links(
     q = (query or "").strip()
     pat = f"%{q}%"
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT l.id, l.topic_id, l.url, l.title, l.user_note, l.ai_summary,
-                   l.added_by, l.created_at,
-                   t.title AS topic_title,
-                   CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS topic_path,
-                   COALESCE(NULLIF(mp.display_name, ''), l.added_by::text) AS added_by_label
-            FROM resource_links l
-            INNER JOIN resource_topics t ON t.id = l.topic_id
-            LEFT JOIN resource_topics p ON p.id = t.parent_id
-            LEFT JOIN member_profiles mp ON mp.telegram_user_id = l.added_by
-            WHERE ($1::bigint IS NULL OR l.topic_id = $1)
-              AND (
-                $2::text = ''
-                OR l.title ILIKE $3
-                OR l.url ILIKE $3
-                OR l.user_note ILIKE $3
-                OR COALESCE(l.ai_summary, '') ILIKE $3
-                OR t.title ILIKE $3
-                OR COALESCE(p.title, '') ILIKE $3
-              )
-            ORDER BY l.created_at DESC
-            LIMIT $4
-            """,
-            topic_id,
-            q,
-            pat,
-            limit,
-        )
+        try:
+            rows = await conn.fetch(
+                """
+                SELECT l.id, l.topic_id, l.url, l.title, l.user_note, l.ai_summary,
+                       COALESCE(l.ai_summary, '') AS summary,
+                       l.added_by, l.created_at,
+                       t.title AS topic_title,
+                       CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS topic_path,
+                       CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS topic,
+                       COALESCE(NULLIF(mp.display_name, ''), l.added_by::text) AS added_by_label
+                FROM resource_links l
+                INNER JOIN resource_topics t ON t.id = l.topic_id
+                LEFT JOIN resource_topics p ON p.id = t.parent_id
+                LEFT JOIN member_profiles mp ON mp.telegram_user_id = l.added_by
+                WHERE ($1::bigint IS NULL OR l.topic_id = $1)
+                  AND (
+                    $2::text = ''
+                    OR l.title ILIKE $3
+                    OR l.url ILIKE $3
+                    OR l.user_note ILIKE $3
+                    OR COALESCE(l.ai_summary, '') ILIKE $3
+                    OR t.title ILIKE $3
+                    OR COALESCE(p.title, '') ILIKE $3
+                  )
+                ORDER BY l.created_at DESC
+                LIMIT $4
+                """,
+                topic_id,
+                q,
+                pat,
+                limit,
+            )
+        except UndefinedTableError:
+            return []
         return list(rows)
 
 
@@ -673,6 +841,7 @@ async def search_library_files(
     pool: asyncpg.Pool,
     query: str,
     limit: int = 15,
+    uploaded_by: int | None = None,
 ) -> list[asyncpg.Record]:
     q = f"%{query.strip()}%"
     async with pool.acquire() as conn:
@@ -685,6 +854,7 @@ async def search_library_files(
             FROM files f
             LEFT JOIN file_categories c ON c.slug = f.confirmed_category
             WHERE f.status = 'confirmed'
+              AND ($3::bigint IS NULL OR f.uploaded_by = $3)
               AND (
                 f.original_filename ILIKE $2
                 OR f.summary ILIKE $2
@@ -697,6 +867,7 @@ async def search_library_files(
             """,
             limit,
             q,
+            uploaded_by,
         )
         return list(rows)
 
@@ -709,31 +880,34 @@ async def search_resource_links(
     q = (query or "").strip()
     pat = f"%{q}%"
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT l.id, l.url, l.title, l.user_note,
-                   COALESCE(l.ai_summary, '') AS summary,
-                   CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS topic,
-                   l.created_at
-            FROM resource_links l
-            INNER JOIN resource_topics t ON t.id = l.topic_id
-            LEFT JOIN resource_topics p ON p.id = t.parent_id
-            WHERE (
-                $1::text = ''
-                OR l.title ILIKE $2
-                OR l.url ILIKE $2
-                OR l.user_note ILIKE $2
-                OR COALESCE(l.ai_summary, '') ILIKE $2
-                OR t.title ILIKE $2
-                OR COALESCE(p.title, '') ILIKE $2
+        try:
+            rows = await conn.fetch(
+                """
+                SELECT l.id, l.url, l.title, l.user_note,
+                       COALESCE(l.ai_summary, '') AS summary,
+                       CASE WHEN p.id IS NULL THEN t.title ELSE p.title || ' / ' || t.title END AS topic,
+                       l.created_at
+                FROM resource_links l
+                INNER JOIN resource_topics t ON t.id = l.topic_id
+                LEFT JOIN resource_topics p ON p.id = t.parent_id
+                WHERE (
+                    $1::text = ''
+                    OR l.title ILIKE $2
+                    OR l.url ILIKE $2
+                    OR l.user_note ILIKE $2
+                    OR COALESCE(l.ai_summary, '') ILIKE $2
+                    OR t.title ILIKE $2
+                    OR COALESCE(p.title, '') ILIKE $2
+                )
+                ORDER BY l.created_at DESC
+                LIMIT $3
+                """,
+                q,
+                pat,
+                limit,
             )
-            ORDER BY l.created_at DESC
-            LIMIT $3
-            """,
-            q,
-            pat,
-            limit,
-        )
+        except UndefinedTableError:
+            return [], False
         return list(rows), True
 
 

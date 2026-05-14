@@ -79,7 +79,7 @@
         <img src="/nav-icon/files.webp" class="sidebar-nav-icon" alt=""><span>Файлы</span>
       </a>
       <a href="/resources" class="nav-link {{ 'active' if nav == 'resources' else '' }}">
-        {{ icon.book() }}<span>Ресурсы</span>
+        <img src="/nav-icon/resources.webp" class="sidebar-nav-icon" alt=""><span>Ссылки</span>
       </a>
       <a href="/feed" class="nav-link {{ 'active' if nav == 'feed' else '' }}">
         <img src="/nav-icon/feed.webp" class="sidebar-nav-icon" alt=""><span>Новости</span>
@@ -93,11 +93,11 @@
       <a href="/companies" class="nav-link {{ 'active' if nav == 'companies' else '' }}">
         <img src="/nav-icon/companies.webp" class="sidebar-nav-icon" alt=""><span>Компании</span>
       </a>
-      <a href="/people" class="nav-link {{ 'active' if nav == 'people' else '' }}">
-        <img src="/nav-icon/people.webp" class="sidebar-nav-icon" alt=""><span>Люди</span>
-      </a>
       <a href="/me" class="nav-link {{ 'active' if nav == 'me' else '' }}">
         <img src="/nav-icon/profile.webp" class="sidebar-nav-icon" alt=""><span>Профиль</span>
+      </a>
+      <a href="/people" class="nav-link {{ 'active' if nav == 'people' else '' }}">
+        <img src="/nav-icon/people.webp" class="sidebar-nav-icon" alt=""><span>Люди</span>
       </a>
     </nav>
     <div class="mt-auto pt-4 border-t border-ink-600">
@@ -115,7 +115,31 @@
   {# Мобильная шапка: высота в --app-mobile-chrome-h для вложенных sticky (библиотека и т.д.) #}
   <div id="mobile-chrome" class="md:hidden sticky top-0 z-30">
     <header class="mobile-topbar mobile-topbar-centered flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 bg-ink-900/85 backdrop-blur border-b border-ink-600">
-      <span aria-hidden="true"></span>
+      {# Контекстные вкладки левее ML Hub — с иконками, 1-в-1 как нижняя панель #}
+      <div class="mobile-header-tabs">
+        {% if nav in ('library', 'resources') %}
+          <a href="/library" class="mobile-header-tab {{ 'active' if nav == 'library' else '' }}">
+            <img src="/nav-icon/files.webp" class="w-8 h-8 shrink-0 object-contain" alt=""><span>Файлы</span>
+          </a>
+          <a href="/resources" class="mobile-header-tab {{ 'active' if nav == 'resources' else '' }}">
+            <img src="/nav-icon/resources.webp" class="w-8 h-8 shrink-0 object-contain" alt=""><span>Ссылки</span>
+          </a>
+        {% elif nav in ('feed', 'today') %}
+          <a href="/feed" class="mobile-header-tab {{ 'active' if nav == 'feed' else '' }}">
+            <img src="/nav-icon/feed.webp" class="w-8 h-8 shrink-0 object-contain" alt=""><span>Новости</span>
+          </a>
+          <a href="/today" class="mobile-header-tab {{ 'active' if nav == 'today' else '' }}">
+            <img src="/nav-icon/today.webp" class="w-8 h-8 shrink-0 object-contain" alt=""><span>Выжимка</span>
+          </a>
+        {% elif nav in ('me', 'people') %}
+          <a href="/me" class="mobile-header-tab {{ 'active' if nav == 'me' else '' }}">
+            <img src="/nav-icon/profile.webp" class="w-8 h-8 shrink-0 object-contain" alt=""><span>Профиль</span>
+          </a>
+          <a href="/people" class="mobile-header-tab {{ 'active' if nav == 'people' else '' }}">
+            <img src="/nav-icon/people.webp" class="w-8 h-8 shrink-0 object-contain" alt=""><span>Люди</span>
+          </a>
+        {% endif %}
+      </div>
       <a href="/" class="mobile-brand-link flex items-center justify-center px-4 py-2.5 rounded-2xl min-h-[3rem] {% if nav == 'home' %}bg-ink-800/50{% else %}bg-transparent{% endif %}">
         <span class="brand-title text-xl leading-none">ML Hub</span>
       </a>
@@ -126,20 +150,17 @@
     </header>
   </div>
 
-  <nav id="mobile-bottom-nav" class="mobile-bottom-nav md:hidden" aria-label="Основная навигация">
-    <a href="/library" class="mobile-tab {{ 'active' if nav == 'library' else '' }}"><img src="/nav-icon/files.webp" class="mobile-nav-icon" alt=""><span>Файлы</span></a>
-    <a href="/resources" class="mobile-tab {{ 'active' if nav == 'resources' else '' }}">{{ icon.book() }}<span>Ресурсы</span></a>
-    <a href="/feed" class="mobile-tab {{ 'active' if nav == 'feed' else '' }}"><img src="/nav-icon/feed.webp" class="mobile-nav-icon" alt=""><span>Новости</span></a>
-    <a href="/today" class="mobile-tab {{ 'active' if nav == 'today' else '' }}"><img src="/nav-icon/today.webp" class="mobile-nav-icon" alt=""><span>Выжимка</span></a>
-    <a href="/hackathons" class="mobile-tab {{ 'active' if nav == 'hackathons' else '' }}"><img src="/nav-icon/hackathons.webp" class="mobile-nav-icon" alt=""><span>Хакатоны</span></a>
-    <a href="/companies" class="mobile-tab {{ 'active' if nav == 'companies' else '' }}"><img src="/nav-icon/companies.webp" class="mobile-nav-icon" alt=""><span>Компании</span></a>
-    <a href="/people" class="mobile-tab {{ 'active' if nav == 'people' else '' }}"><img src="/nav-icon/people.webp" class="mobile-nav-icon" alt=""><span>Люди</span></a>
-    <a href="/me" class="mobile-tab {{ 'active' if nav == 'me' else '' }}"><img src="/nav-icon/profile.webp" class="mobile-nav-icon" alt=""><span>Профиль</span></a>
-  </nav>
-
   <main class="app-main flex-1 md:ml-60 px-4 md:px-10 py-6 md:py-10 max-w-6xl">
     {% block main %}{% endblock %}
   </main>
+
+  <nav id="mobile-bottom-nav" class="mobile-bottom-nav md:hidden" aria-label="Основная навигация">
+    <a href="/library" class="mobile-tab {{ 'active' if nav in ('library', 'resources') else '' }}"><img src="/nav-icon/files.webp" class="mobile-nav-icon" alt=""><span>Файлы</span></a>
+    <a href="/feed" class="mobile-tab {{ 'active' if nav in ('feed', 'today') else '' }}"><img src="/nav-icon/feed.webp" class="mobile-nav-icon" alt=""><span>Новости</span></a>
+    <a href="/hackathons" class="mobile-tab {{ 'active' if nav == 'hackathons' else '' }}"><img src="/nav-icon/hackathons.webp" class="mobile-nav-icon" alt=""><span>Хакатоны</span></a>
+    <a href="/companies" class="mobile-tab {{ 'active' if nav == 'companies' else '' }}"><img src="/nav-icon/companies.webp" class="mobile-nav-icon" alt=""><span>Компании</span></a>
+    <a href="/me" class="mobile-tab {{ 'active' if nav in ('me', 'people') else '' }}"><img src="/nav-icon/profile.webp" class="mobile-nav-icon" alt=""><span>Профиль</span></a>
+  </nav>
 </div>
 {% else %}
 <main class="min-h-screen">
@@ -191,22 +212,6 @@
     } else {
       window.addEventListener("resize", sync);
     }
-  }
-  if (bottomEl) {
-    var navScrollKey = "hub_mobile_bottom_nav_scroll_left";
-    try {
-      var savedLeft = parseInt(sessionStorage.getItem(navScrollKey) || "0", 10);
-      if (Number.isFinite(savedLeft) && savedLeft > 0) bottomEl.scrollLeft = savedLeft;
-    } catch (e) {}
-    var saveLeft = function () {
-      try {
-        sessionStorage.setItem(navScrollKey, String(bottomEl.scrollLeft || 0));
-      } catch (e) {}
-    };
-    bottomEl.addEventListener("scroll", saveLeft, { passive: true });
-    bottomEl.addEventListener("pointerdown", saveLeft, { passive: true });
-    bottomEl.addEventListener("click", saveLeft, true);
-    window.addEventListener("pagehide", saveLeft);
   }
 })();
 </script>

@@ -4,9 +4,10 @@ Classify the user's message into one intent:
 - event: a news-style announcement — meetup, conference, deadline, competition, call for papers, hackathon dates, CfP, internship round, etc.
 - hr_contact: introducing an HR / recruiter / talent person by @username or numeric id, OR narrative context about such a person (company, how you met, hiring style). NOT generic event announcements.
 - file_material: study materials, PDFs, courses, prep — usually with an attachment or explicit file mention.
+- resource_link: a useful web link to share with the community — article, tool, library, tutorial, course page, blog post, documentation, GitHub repo, etc. Usually contains an http/https URL with no event date or HR context.
 - other: greetings, small talk, unclear.
 
-Return ONLY valid JSON: {"intent":"event|hr_contact|file_material|other","confidence":0.0-1.0,"reason_short":"..."}
+Return ONLY valid JSON: {"intent":"event|hr_contact|file_material|resource_link|other","confidence":0.0-1.0,"reason_short":"..."}
 
 User message:
 ---

@@ -89,7 +89,9 @@ async def _fetch_github_public(username: str) -> tuple[str, dict[str, Any]]:
             if user_resp.status_code == 404:
                 raise ProfileAnalysisError("GitHub-профиль не найден.")
             if user_resp.status_code == 403:
-                raise ProfileAnalysisError("GitHub временно ограничил публичные запросы. Попробуйте позже.")
+                raise ProfileAnalysisError(
+                    "GitHub ограничил публичные запросы без авторизации. Попробуйте позже."
+                )
             user_resp.raise_for_status()
             user = user_resp.json()
 
@@ -98,7 +100,9 @@ async def _fetch_github_public(username: str) -> tuple[str, dict[str, Any]]:
                 params={"type": "owner", "sort": "updated", "per_page": 40},
             )
             if repos_resp.status_code == 403:
-                raise ProfileAnalysisError("GitHub временно ограничил публичные запросы к репозиториям.")
+                raise ProfileAnalysisError(
+                    "GitHub ограничил публичные запросы к репозиториям без авторизации. Попробуйте позже."
+                )
             repos_resp.raise_for_status()
             repos = repos_resp.json()
     except ProfileAnalysisError:
@@ -143,12 +147,11 @@ def _as_list(raw: Any) -> list[str]:
 
 def _normalize_result(raw: dict[str, Any]) -> dict[str, Any]:
     return {
-        "career_summary": str(raw.get("career_summary") or "").strip(),
-        "stack": _as_list(raw.get("stack")),
-        "strengths": _as_list(raw.get("strengths")),
-        "projects": _as_list(raw.get("projects")),
-        "resume_recommendations": _as_list(raw.get("resume_recommendations")),
-        "about_block": str(raw.get("about_block") or "").strip(),
+        "github_observations": _as_list(raw.get("github_observations")),
+        "look_at": _as_list(raw.get("look_at")),
+        "pay_attention": _as_list(raw.get("pay_attention")),
+        "questionable": _as_list(raw.get("questionable")),
+        "keep": _as_list(raw.get("keep")),
         "questions_for_user": _as_list(raw.get("questions_for_user")),
     }
 

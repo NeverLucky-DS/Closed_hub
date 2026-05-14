@@ -293,6 +293,72 @@ CREATE TABLE IF NOT EXISTS profile_analyses (
 CREATE INDEX IF NOT EXISTS idx_profile_analyses_updated ON profile_analyses (updated_at DESC);
 """,
     ),
+    (
+        16,
+        """
+CREATE TABLE IF NOT EXISTS resource_topics (
+    id BIGSERIAL PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    parent_id BIGINT REFERENCES resource_topics (id) ON DELETE CASCADE,
+    created_by BIGINT REFERENCES members (telegram_user_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_resource_topics_parent ON resource_topics (parent_id);
+
+INSERT INTO resource_topics (slug, title) VALUES
+    ('career', 'Карьера'),
+    ('interviews', 'Собеседования'),
+    ('ml', 'Machine Learning'),
+    ('algorithms', 'Алгоритмы'),
+    ('courses', 'Курсы'),
+    ('tools', 'Инструменты'),
+    ('other', 'Другое')
+ON CONFLICT (slug) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS resource_links (
+    id BIGSERIAL PRIMARY KEY,
+    topic_id BIGINT NOT NULL REFERENCES resource_topics (id) ON DELETE RESTRICT,
+    url TEXT NOT NULL,
+    title TEXT NOT NULL,
+    user_note TEXT NOT NULL DEFAULT '',
+    ai_summary TEXT,
+    added_by BIGINT NOT NULL REFERENCES members (telegram_user_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_resource_links_topic_created
+    ON resource_links (topic_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_resource_links_created
+    ON resource_links (created_at DESC);
+""",
+    ),
+    (
+        17,
+        """
+CREATE EXTENSION IF NOT EXISTS vector;
+
+ALTER TABLE resource_links
+    ADD COLUMN IF NOT EXISTS embedding vector(256),
+    ADD COLUMN IF NOT EXISTS embedding_model TEXT,
+    ADD COLUMN IF NOT EXISTS embedding_text_hash TEXT,
+    ADD COLUMN IF NOT EXISTS embedding_updated_at TIMESTAMPTZ;
+
+ALTER TABLE files
+    ADD COLUMN IF NOT EXISTS embedding vector(256),
+    ADD COLUMN IF NOT EXISTS embedding_model TEXT,
+    ADD COLUMN IF NOT EXISTS embedding_text_hash TEXT,
+    ADD COLUMN IF NOT EXISTS embedding_updated_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS resource_links_embedding_hnsw_idx
+    ON resource_links USING hnsw (embedding vector_cosine_ops)
+    WHERE embedding IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS files_embedding_hnsw_idx
+    ON files USING hnsw (embedding vector_cosine_ops)
+    WHERE embedding IS NOT NULL;
+""",
+    ),
 ]
 
 
