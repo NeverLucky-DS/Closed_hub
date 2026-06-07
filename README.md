@@ -1,70 +1,72 @@
 # Closed Hub
 
-Закрытая **инфраструктура** для небольшого сообщества: один **Telegram-бот** (личные сообщения + форум-группа с темами), **веб-интерфейс** на том же PostgreSQL и набор **сервисов** (маршрутизация контента, ИИ, файлы, синхронизация с таблицами). Репозиторий рассчитан на развёртывание у себя: Docker Compose, явные переменные окружения, без привязки к конкретному бренду или контенту.
+Backend-платформа закрытого сообщества: **Telegram-бот** + **FastAPI веб** + **PostgreSQL** + **Mistral LLM** (маршрутизация intent, саммари, классификация) + **async workers**.
+
+Self-hosted: Docker Compose, `.env`, без привязки к конкретному контенту.
+
+---
+
+## Зачем этот проект (backend / AI)
+
+Главный репозиторий для демонстрации опыта backend-разработки агентских модулей.
+
+| Навык | Реализация |
+|-------|------------|
+| Python | bot, web, 20+ services |
+| FastAPI | REST + HTML (Jinja2), `/health`, `/ready` |
+| PostgreSQL | asyncpg, pgvector, `db/repo.py`, schema patches |
+| Тесты | pytest (в разработке), CI smoke import |
+| LLM / агенты | `services/routing.py` → `services/llm.py`, промпты в `prompts/` |
+| Async | asyncpg, httpx, `asyncio.Queue` worker |
+| Git, Docker | docker-compose, GitHub Actions, changelog |
+
+**Поток данных:** Telegram → handlers → routing (heuristic + LLM) → services → PostgreSQL; веб читает те же данные.
+
+---
+
+## Скриншоты
+
+```markdown
+![Лента](docs/screenshots/feed.png)
+```
+
+| Файл | Что снять |
+|------|-----------|
+| `feed.png` | веб-лента / главная |
+| `bot.png` | диалог с ботом в Telegram |
+| `architecture.png` | схема bot → services → LLM → DB (draw.io / excalidraw) |
+
+Папка: `docs/screenshots/`. PNG/JPG в commit — GitHub отрисует в README.
+
+---
 
 ## Быстрый старт
 
-1. **Клонировать** репозиторий, установить [uv](https://github.com/astral-sh/uv) и (по желанию) Docker.
-2. **Окружение:** `cp .env.example .env` и заполнить минимум `TELEGRAM_BOT_TOKEN`, `TELEGRAM_GROUP_CHAT_ID`, `MISTRAL_API_KEY`, `WEB_SESSION_SECRET`, `DATABASE_URL` (или полагаться на значения из примера для локального Postgres).
-3. **База и процессы:**
-   - `docker compose up -d` — поднимет Postgres, бота и веб. Внутри контейнера веб слушает **8000**; с хоста по умолчанию это **`WEB_HOST_PORT` → 8001** (`${WEB_HOST_PORT:-8001}:8000` в `docker-compose.yml`). То есть открывать `http://localhost:8001`, если не переопределяли порт.
-   - Локально без Docker (частый вариант разработки): `uv sync`, затем `uv run python -m bot.main` и отдельно `uv run python -m web.main` — веб по умолчанию на **8000** (`http://localhost:8000`), если не задан другой порт в окружении/аргументах uvicorn.
+1. `cp .env.example .env` — `TELEGRAM_BOT_TOKEN`, `MISTRAL_API_KEY`, `WEB_SESSION_SECRET`, Postgres.
+2. `docker compose up -d` — Postgres + bot + web (с хоста веб: `http://localhost:8001` по умолчанию).
+3. Локально: `uv sync`, `uv run python -m bot.main` и `uv run python -m web.main`.
 
-Подробные переменные — в [`.env.example`](.env.example).
+Переменные — в [`.env.example`](.env.example).
 
-## Docker Compose и PostgreSQL
+---
 
-- **Учётные данные Postgres** задаются переменными `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` (подхватываются из окружения или из `.env` рядом с `docker-compose.yml`). Значения по умолчанию `closedhub` / `closedhub` / `closedhub` рассчитаны на **локальную** машину. **В продакшене обязательно задайте сильный `POSTGRES_PASSWORD`** и не оставляйте дефолт.
-- Сервисы **bot** и **web** в Compose получают `DATABASE_URL` на `postgres:5432`, собранный из тех же `POSTGRES_*`, чтобы совпадать с контейнером Postgres.
-- Схема при первом старте по-прежнему подключается как [`db/schema.sql`](db/schema.sql) → `docker-entrypoint-initdb.d`; healthcheck Postgres использует тот же пользователь и имя базы, что и переменные окружения контейнера.
-
-## Как пользоваться
-
-### Участник в Telegram
-
-- Написать боту в **личку**: обработка текста, вложений, голосовых (при наличии `GROQ_API_KEY`), сценарии из [`bot/handlers/messages.py`](bot/handlers/messages.py).
-- **Форум-группа** с темами: публикации и служебные потоки задаются id тем в `.env` (`TELEGRAM_TOPIC_*`). Бот публикует в нужные ветки согласно логике сервисов.
-- Команды: `/start`, `/help`, `/files` — см. [`bot/main.py`](bot/main.py).
-
-### Веб-хаб
-
-- **Локально через `uv run … web.main`:** обычно `http://<хост>:8000`.
-- **Через Docker Compose:** снаружи — порт из `WEB_HOST_PORT` (по умолчанию **8001**), внутри сети контейнеров приложение по-прежнему на 8000.
-- В LAN удобно узнать URL: [`scripts/print-web-lan-url.sh`](scripts/print-web-lan-url.sh).
-- **Вход:** указать свой числовой Telegram user id → одноразовый код в ЛС от бота → сессия cookie. Нужен активный участник в БД (whitelist / members).
-- Права «админа» на сайте задаются `WEB_ADMIN_TELEGRAM_IDS` в `.env`.
-
-### Операции и обслуживание
-
-- Схема БД: [`db/schema.sql`](db/schema.sql), донакат патчей при старте: [`db/schema_patch.py`](db/schema_patch.py).
-- Разовая догрузка саммари событий: `uv run python -m web.backfill_summaries` (см. комментарий в [`web/backfill_summaries.py`](web/backfill_summaries.py)).
-- Файлы участников на диске: каталог `storage/` (в `.gitignore`).
-
-## Как устроен репозиторий
+## Структура
 
 | Путь | Назначение |
 |------|------------|
-| `bot/` | Точка входа бота, хендлеры, клавиатуры |
-| `web/` | FastAPI-приложение, шаблоны Jinja2, статика |
-| `db/` | Пул asyncpg, репозиторий запросов, SQL и патчи схемы |
-| `services/` | Бизнес-логика: события, файлы, HR, компании, LLM, очки активности и др. |
-| `prompts/` | Тексты промптов для LLM (отдельно от кода) |
-| `config/` | JSON настроек очков активности и контекста для сценариев (не секреты) |
-| `utils/` | Мелкие утилиты (slug, подписи в Telegram, таблицы) |
+| `bot/` | Telegram bot, handlers |
+| `web/` | FastAPI, templates, static |
+| `db/` | asyncpg pool, repo, schema.sql |
+| `services/` | LLM, routing, events, files, HR, search |
+| `prompts/` | промпты Mistral (отдельно от кода) |
+| `docs/changelog/` | история изменений |
 
-Поток данных в общих чертах: **Telegram** → хендлеры → **services** + **db/repo** → **PostgreSQL**; **веб** читает и пишет те же таблицы через `repo` и отдаёт HTML/JSON.
+---
 
-История небольших изменений по задачам — в [`docs/changelog/`](docs/changelog/) (файлы `change_*.md`).
+## Production / VPS
 
-## Сборка
+- Deploy: [`deploy/README.md`](deploy/README.md)
+- Health: `GET /health`, `GET /ready`
+- Планы: [`docs/plans/vps_aeza_hosting_plan.md`](docs/plans/vps_aeza_hosting_plan.md)
 
-- Образ: [`Dockerfile`](Dockerfile) — `uv sync --frozen`, команда по умолчанию — бот; в Compose для веба переопределена команда на `web.main`.
-- Зависимости зафиксированы в [`uv.lock`](uv.lock); Python версии: [`.python-version`](.python-version).
-
-## VPS / Aeza
-
-Для выноса на VPS (в том числе Aeza): **TLS** на границе (терминация на reverse proxy или у провайдера), **сильный `POSTGRES_PASSWORD`**, публичный трафик через **reverse proxy** к контейнеру с веб-приложением (и при необходимости отдельная политика доступа к боту/админке). **Проверки живости веба:** `GET /health` (процесс жив) и `GET /ready` (есть соединение с БД). Пошаговый план развёртывания: [`docs/plans/vps_aeza_hosting_plan.md`](docs/plans/vps_aeza_hosting_plan.md). Дополнительные заметки по хостингу: [`.cursor/skills/vps-aeza-hosting/SKILL.md`](.cursor/skills/vps-aeza-hosting/SKILL.md).
-
-## Лицензия и секреты
-
-Секреты не коммитить: `.env`, ключи Google, `storage/`. Пример переменных — только в `.env.example`.
+Секреты не коммитить: `.env`, `storage/`.
