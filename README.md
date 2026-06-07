@@ -4,6 +4,8 @@ Backend-платформа закрытого сообщества: **Telegram-�
 
 Self-hosted: Docker Compose, `.env`, без привязки к конкретному контенту.
 
+**Live demo:** [hub-ml.ru](https://hub-ml.ru)
+
 ---
 
 ## Зачем этот проект (backend / AI)
