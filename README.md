@@ -1,33 +1,12 @@
 # Closed Hub
 
-**LLM-платформа** для закрытого ML-сообщества: Telegram собирает события и материалы, **Mistral** маршрутизирует intent, саммаризирует ленту и извлекает HR-контекст. **pgvector** для embeddings. FastAPI-веб — витрина тех же данных.
+**LLM-платформа** для закрытого ML-сообщества: Telegram собирает события и материалы, **Mistral** маршрутизирует intent, саммаризирует ленту и извлекает HR-контекст. **pgvector** для embeddings. FastAPI-веб показывает те же данные из PostgreSQL.
 
-**Live demo:** [hub-ml.ru](https://hub-ml.ru) · **Репо:** https://github.com/NeverLucky-DS/Closed_hub
+**Live demo:** [hub-ml.ru](https://hub-ml.ru)
 
-| Направление | Реализация |
-|-------------|------------|
-| LLM / агенты | `routing.py` — heuristic + classify intent; промпты в `prompts/` |
-| NLP tasks | Саммари событий, HR-extract, дедупликация анонсов |
-| ML infra | pgvector, лог `llm_calls` (tokens, latency) |
-| Данные | PostgreSQL asyncpg, единый `db/repo.py` |
-| Сервинг | FastAPI + Jinja2, Telegram-бот; pytest — 22 теста |
-| Async | `asyncio.Queue` worker, asyncpg, httpx |
+**Стек:** Mistral · pgvector · PostgreSQL · FastAPI · Telegram · Docker · pytest (22)
 
-**Поток данных:** Telegram → routing (heuristic + LLM) → services → PostgreSQL; веб читает те же таблицы.
-
--------|------------|
-| Python | `bot/`, `web/`, 20+ модулей в `services/` |
-| FastAPI | REST + HTML (Jinja2), `/health`, `/ready`, auth API |
-| PostgreSQL | asyncpg, pgvector, `db/repo.py`, schema patches |
-| Тесты | pytest — **22** теста (`tests/`), без внешних API |
-| LLM / агенты | `services/routing.py` → `services/llm.py`, промпты в `prompts/` |
-| Async | asyncpg, httpx, `asyncio.Queue` worker, debounced HR extract |
-| Docker | docker-compose: Postgres + bot + web |
-| Git | GitHub Actions (import smoke + pytest) |
-
-**Поток данных:** Telegram → handlers → routing (heuristic + LLM) → services → PostgreSQL; веб читает те же данные.
-
----
+**Поток:** Telegram → routing (heuristic + LLM) → services → PostgreSQL → веб
 
 ## Демонстрация
 
