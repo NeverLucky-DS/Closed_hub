@@ -1,11 +1,21 @@
 # Closed Hub
 
-Закрытая платформа ML-сообщества: **Telegram-бот** собирает мероприятия, HR-контакты и материалы; **FastAPI-веб** показывает ленту, компании, библиотеку и профили. **Mistral LLM** маршрутизирует intent, саммаризирует новости и извлекает HR-контекст. Данные — **PostgreSQL** (asyncpg, pgvector).
+**LLM-платформа** для закрытого ML-сообщества: Telegram собирает события и материалы, **Mistral** маршрутизирует intent, саммаризирует ленту и извлекает HR-контекст. **pgvector** для embeddings. FastAPI-веб — витрина тех же данных.
 
 **Live demo:** [hub-ml.ru](https://hub-ml.ru) · **Репо:** https://github.com/NeverLucky-DS/Closed_hub
 
-| Навык | Реализация |
-|-------|------------|
+| Направление | Реализация |
+|-------------|------------|
+| LLM / агенты | `routing.py` — heuristic + classify intent; промпты в `prompts/` |
+| NLP tasks | Саммари событий, HR-extract, дедупликация анонсов |
+| ML infra | pgvector, лог `llm_calls` (tokens, latency) |
+| Данные | PostgreSQL asyncpg, единый `db/repo.py` |
+| Сервинг | FastAPI + Jinja2, Telegram-бот; pytest — 22 теста |
+| Async | `asyncio.Queue` worker, asyncpg, httpx |
+
+**Поток данных:** Telegram → routing (heuristic + LLM) → services → PostgreSQL; веб читает те же таблицы.
+
+-------|------------|
 | Python | `bot/`, `web/`, 20+ модулей в `services/` |
 | FastAPI | REST + HTML (Jinja2), `/health`, `/ready`, auth API |
 | PostgreSQL | asyncpg, pgvector, `db/repo.py`, schema patches |
