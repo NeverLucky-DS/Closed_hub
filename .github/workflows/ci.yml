@@ -26,3 +26,6 @@ jobs:
 
       - name: Smoke import FastAPI app
         run: uv run python -c "from web.app import app; assert app.title"
+
+      - name: Pytest
+        run: uv run pytest -v --tb=short

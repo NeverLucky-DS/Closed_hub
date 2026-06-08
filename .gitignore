@@ -4,6 +4,9 @@ venv/
 
 # Cursor IDE (локальные планы, skills, агенты — не в репозиторий)
 .cursor/
+
+# Локальная копия ECC (источник — ~/.ecc / Downloads)
+ECC-main-2/
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -20,3 +23,7 @@ web/static/news-placeholders/*
 # Ключи Google Cloud / сервисные аккаунты (локально, не в репозиторий)
 closeml-*.json
 *-service-account*.json
+
+# Деплой: локальный SSH-конфиг и дампы БД
+deploy/host.env
+deploy/dumps/*.sql.gz
